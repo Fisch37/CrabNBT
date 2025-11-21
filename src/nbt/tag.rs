@@ -5,6 +5,9 @@ use crab_nbt::nbt::utils::*;
 use derive_more::From;
 use std::fmt::{self, Display, Formatter};
 use std::io::Cursor;
+use std::str::FromStr;
+
+use crate::nbt::error::SnbtDeserialisationError;
 
 /// Enum representing the different types of NBT tags.
 /// Each variant corresponds to a different type of data that can be stored in an NBT tag.
@@ -293,6 +296,14 @@ impl Display for NbtTag {
             Self::IntArray(arr) => write_listlike(f, "I; ", "", arr),
             Self::LongArray(arr) => write_listlike(f, "L; ", "L", arr),
         }
+    }
+}
+
+impl FromStr for NbtTag {
+    type Err = SnbtDeserialisationError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        todo!()
     }
 }
 

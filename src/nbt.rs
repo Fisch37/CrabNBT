@@ -1,4 +1,6 @@
 use crate::error::Error;
+use crate::nbt::de_utils::{consume_whitespace, expect_char, read_tag_name, StrVisitor};
+use crate::nbt::error::SnbtDeserialisationError;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use crab_nbt::nbt::compound::NbtCompound;
 use crab_nbt::nbt::tag::NbtTag;
@@ -6,8 +8,11 @@ use crab_nbt::nbt::utils::*;
 use std::fmt::{self, Display, Formatter};
 use std::io::{Cursor, Write};
 use std::ops::Deref;
+use std::str::FromStr;
 
 pub mod compound;
+pub(crate) mod de_utils;
+pub mod error;
 pub mod tag;
 pub mod utils;
 
@@ -124,5 +129,25 @@ impl AsMut<NbtCompound> for Nbt {
 impl Display for Nbt {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{{\"{}\": {}}}", self.name, self.root_tag)
+    }
+}
+
+impl FromStr for Nbt {
+    type Err = SnbtDeserialisationError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut visitor = StrVisitor::new(s);
+        expect_char(&mut visitor, '{')?;
+        consume_whitespace(&mut visitor);
+
+        let name = read_tag_name(&mut visitor)?;
+
+        expect_char(&mut visitor, ':')?;
+
+        let compound = NbtCompound::new();
+
+        expect_char(&mut visitor, '}')?;
+
+        Ok(Nbt::new(name, compound))
     }
 }

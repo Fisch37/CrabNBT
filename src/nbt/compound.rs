@@ -1,3 +1,4 @@
+use crate::nbt::error::SnbtDeserialisationError;
 use crate::nbt::utils::{escape_name, join_formatted};
 use crate::{error::Error, Nbt};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
@@ -6,6 +7,7 @@ use crab_nbt::nbt::utils::{get_nbt_string, END_ID};
 use derive_more::Into;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::io::{Cursor, Write};
+use std::str::FromStr;
 use std::vec::IntoIter;
 
 #[derive(Clone, Debug, Default, PartialEq, PartialOrd, Into)]
@@ -176,5 +178,13 @@ impl Display for NbtCompound {
         join_formatted(f, ", ", iterator)?;
 
         write!(f, "}}")
+    }
+}
+
+impl FromStr for NbtCompound {
+    type Err = SnbtDeserialisationError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        todo!()
     }
 }
