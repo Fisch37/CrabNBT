@@ -1,3 +1,5 @@
+use crate::impl_FromStr_through_FromVisitor;
+use crate::nbt::de_utils::{FromVisitor, StrVisitor, consume_whitespace, expect_char, read_string};
 use crate::nbt::error::SnbtDeserialisationError;
 use crate::nbt::utils::{escape_name, join_formatted};
 use crate::{error::Error, Nbt};
@@ -7,7 +9,6 @@ use crab_nbt::nbt::utils::{get_nbt_string, END_ID};
 use derive_more::Into;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::io::{Cursor, Write};
-use std::str::FromStr;
 use std::vec::IntoIter;
 
 #[derive(Clone, Debug, Default, PartialEq, PartialOrd, Into)]
@@ -181,10 +182,33 @@ impl Display for NbtCompound {
     }
 }
 
-impl FromStr for NbtCompound {
+impl FromVisitor for NbtCompound {
     type Err = SnbtDeserialisationError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        todo!()
+    fn from_visitor(visitor: &mut StrVisitor) -> Result<Self, Self::Err> {
+        expect_char(visitor, '{')?;
+
+        let mut child_tags = vec![];
+        while let Some(c) = visitor.peek() {
+            if c == '}' {
+                return Ok(NbtCompound { child_tags });
+            }
+            consume_whitespace(visitor);
+            let name = read_string(visitor)?;
+            
+            consume_whitespace(visitor);
+            expect_char(visitor, ':')?;
+            consume_whitespace(visitor);
+
+            let tag = NbtTag::from_visitor(visitor)?;
+            consume_whitespace(visitor);
+            if visitor.peek().filter(|c| *c == '}').is_none() {
+                expect_char(visitor, ',')?;
+            }
+
+            child_tags.push((name, tag));
+        }
+        Err(SnbtDeserialisationError::eof('}'))
     }
 }
+impl_FromStr_through_FromVisitor!(NbtCompound);

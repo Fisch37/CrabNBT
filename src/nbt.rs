@@ -1,5 +1,6 @@
 use crate::error::Error;
-use crate::nbt::de_utils::{consume_whitespace, expect_char, read_tag_name, StrVisitor};
+use crate::impl_FromStr_through_FromVisitor;
+use crate::nbt::de_utils::{FromVisitor, StrVisitor, consume_whitespace, expect_char, read_string};
 use crate::nbt::error::SnbtDeserialisationError;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use crab_nbt::nbt::compound::NbtCompound;
@@ -8,7 +9,6 @@ use crab_nbt::nbt::utils::*;
 use std::fmt::{self, Display, Formatter};
 use std::io::{Cursor, Write};
 use std::ops::Deref;
-use std::str::FromStr;
 
 pub mod compound;
 pub(crate) mod de_utils;
@@ -132,22 +132,27 @@ impl Display for Nbt {
     }
 }
 
-impl FromStr for Nbt {
+impl FromVisitor for Nbt {
     type Err = SnbtDeserialisationError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut visitor = StrVisitor::new(s);
-        expect_char(&mut visitor, '{')?;
-        consume_whitespace(&mut visitor);
+    fn from_visitor(visitor: &mut StrVisitor) -> Result<Self, Self::Err> {
+        expect_char(visitor, '{')?;
+        consume_whitespace(visitor);
 
-        let name = read_tag_name(&mut visitor)?;
+        let name = read_string(visitor)?;
+        consume_whitespace(visitor);
 
-        expect_char(&mut visitor, ':')?;
+        expect_char(visitor, ':')?;
+        consume_whitespace(visitor);
 
-        let compound = NbtCompound::new();
+        let root_tag = NbtCompound::from_visitor(visitor)?;
+        consume_whitespace(visitor);
+        expect_char(visitor, '}')?;
 
-        expect_char(&mut visitor, '}')?;
-
-        Ok(Nbt::new(name, compound))
+        Ok(Self {
+            name,
+            root_tag
+        })
     }
 }
+impl_FromStr_through_FromVisitor!(Nbt);

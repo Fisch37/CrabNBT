@@ -1,11 +1,10 @@
-use std::fmt::Display;
+use std::{error::Error, fmt::Display};
 
 #[derive(Debug)]
 pub struct SnbtDeserialisationError {
     pub expected: String,
     pub found: Option<char>,
 }
-
 impl SnbtDeserialisationError {
     fn new<S: ToString>(expected: S, found: Option<char>) -> Self {
         SnbtDeserialisationError {
@@ -22,7 +21,6 @@ impl SnbtDeserialisationError {
         Self::new(expected, Some(found))
     }
 }
-
 impl Display for SnbtDeserialisationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -35,3 +33,4 @@ impl Display for SnbtDeserialisationError {
         )
     }
 }
+impl Error for SnbtDeserialisationError { }

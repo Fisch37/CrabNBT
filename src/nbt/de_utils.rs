@@ -1,8 +1,39 @@
-use std::{iter::FusedIterator, num::NonZero};
+use std::iter::FusedIterator;
 
 use crate::nbt::error::SnbtDeserialisationError;
 
-type Result<T> = std::result::Result<T, SnbtDeserialisationError>;
+pub type Result<T> = std::result::Result<T, SnbtDeserialisationError>;
+
+/// A middleman trait for [`std::str::FromStr`].
+/// 
+pub trait FromVisitor: Sized {
+    type Err;
+
+    fn from_visitor(visitor: &mut StrVisitor) -> std::result::Result<Self, Self::Err>;
+}
+
+#[macro_export]
+/// Provides an implementation of [`std::str::FromStr`] for types that implement [`FromVisitor`].
+/// It calls [`FromVisitor::from_visitor`] and if, after the method returns,
+/// the visitor is not exhausted, returns an [`Err`] variant (otherwise, returns the result)
+macro_rules! impl_FromStr_through_FromVisitor {
+    ($type:ty) => {
+        impl std::str::FromStr for $type {
+            type Err = <$type as FromVisitor>::Err;
+
+            fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+                let mut visitor = StrVisitor::new(s);
+                Self::from_visitor(&mut visitor)
+                    .and_then(|res| {
+                        match visitor.peek() {
+                            None => Ok(res),
+                            Some(c) => Err(SnbtDeserialisationError::unexpected("EOF", c))
+                        }
+                    })
+            }
+        }
+    };
+}
 
 /// A more flexible replacement for `std::str::Chars`.
 /// Allows character-by-character iteration over a string,
@@ -19,13 +50,29 @@ impl<'a> StrVisitor<'a> {
         StrVisitor { slice, position: 0 }
     }
 
-    /// Returns the next char in the visitor without advancing
+    /// Returns the next char in the visitor without advancing.
+    /// 
+    /// It is guaranteed that the result of this method 
+    /// will be the same as the next result of [`Self::next`]
     pub fn peek(&self) -> Option<char> {
         self.as_str().chars().next()
     }
 
+    pub fn previous(&mut self) -> Option<char> {
+        self.position = previous_char_boundary(self.slice, self.position);
+        self.peek()
+    }
+
+    pub fn next_if<P: FnOnce(char) -> bool>(&mut self, predicate: P) -> Option<char> {
+        self.peek().filter(|c| predicate(*c)).inspect(|_| { self.next(); })
+    }
+
     pub fn as_str(&self) -> &'a str {
         &self.slice[self.position..]
+    }
+
+    pub fn get_position(&self) -> usize {
+        return self.position
     }
 }
 impl<'a> Clone for StrVisitor<'a> {
@@ -57,7 +104,8 @@ impl<'a> FusedIterator for StrVisitor<'a> {}
 
 /// Finds the next char boundary greater than index. Saturates to slice.len()
 ///
-/// This can be replaced once ceil_char_boundary is stabilised (requiring Rust 2025 Edition).
+/// This can be replaced once [`str::ceil_char_boundary`] is stabilised 
+/// (requiring Rust 2025 Edition).
 /// see rust-lang/rust#93743 for more
 fn next_char_boundary(slice: &str, index: usize) -> usize {
     for i in (index + 1)..slice.len() {
@@ -68,13 +116,26 @@ fn next_char_boundary(slice: &str, index: usize) -> usize {
     slice.len()
 }
 
+/// Finds the last char boundary less than index. Saturates to 0
+/// 
+/// Like [`next_char_boundary`] this can be replaced
+/// once [`str::floor_char_boundary`] is stabilised.
+fn previous_char_boundary(slice: &str, index: usize) -> usize {
+    for i in (0..index).rev() {
+        if slice.is_char_boundary(i) {
+            return i;
+        }
+    }
+    0
+}
+
 pub(crate) fn expect_char(chars: &mut dyn Iterator<Item = char>, expected: char) -> Result<()> {
     expect_condition(chars, &|c| c == expected, expected).map(|_| ())
 }
 
-pub(crate) fn expect_condition<S: ToString>(
+pub(crate) fn expect_condition<S: ToString, P: FnOnce(char) -> bool>(
     chars: &mut dyn Iterator<Item = char>,
-    match_condition: &dyn Fn(char) -> bool,
+    match_condition: P,
     expected: S,
 ) -> Result<char> {
     match chars.next().ok_or(SnbtDeserialisationError::eof("{"))? {
@@ -83,7 +144,37 @@ pub(crate) fn expect_condition<S: ToString>(
     }
 }
 
-pub(crate) fn consume_while(visitor: &mut StrVisitor, condition: &dyn Fn(char) -> bool) {
+/// Expect a literal series of characters in `chars`, matching `expected`.
+/// 
+/// If the iterators don't match,
+/// returns an Err variant with [`SnbtDeserialisationError::unexpected`] and `chars` and `expected`
+/// will be positioned _after_ the mismatched characters.
+/// 
+/// If `chars` is shorter than `expected`, returns an Err with [`SnbtDeserialisationError::eof`].
+pub(crate) fn expect_literal(
+    chars: &mut dyn Iterator<Item = char>,
+    expected: &mut dyn Iterator<Item = char>
+) -> Result<()> {
+    for expected_char in expected {
+        let current_char = chars.next()
+            .ok_or(SnbtDeserialisationError::eof(expected_char))?;
+        if expected_char != current_char {
+            return Err(SnbtDeserialisationError::unexpected(expected_char, current_char));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn expect_string(
+    chars: &mut dyn Iterator<Item = char>,
+    expected: &str
+) -> Result<()> {
+    expect_literal(chars, &mut expected.chars())
+}
+
+pub(crate) fn consume_while<P>(visitor: &mut StrVisitor, mut condition: P)
+    where P: FnMut(char) -> bool
+{
     while let Some(future) = visitor.peek() {
         if !condition(future) {
             break;
@@ -93,40 +184,65 @@ pub(crate) fn consume_while(visitor: &mut StrVisitor, condition: &dyn Fn(char) -
 }
 
 pub(crate) fn consume_whitespace(visitor: &mut StrVisitor) {
-    consume_while(visitor, &|c| c.is_whitespace())
+    consume_while(visitor, |c| c.is_whitespace())
 }
 
-pub(crate) fn read_tag_name(visitor: &mut StrVisitor) -> Result<String> {
+pub(crate) fn read_string(visitor: &mut StrVisitor) -> Result<String> {
+    let first_char = visitor.peek()
+        .ok_or(SnbtDeserialisationError::eof("quote or any tag character"))?;
+    match first_char {
+        '"' | '\'' => read_quoted_string(visitor),
+        _ => read_unquoted_string(visitor)
+    }
+}
+
+pub(crate) fn read_quoted_string(visitor: &mut StrVisitor) -> Result<String> {
     let mut result = String::new();
-    let quote_char: Option<NonZero<char>>; // using NonZero as a small optimisation
-    {
-        let tag_start = visitor
-            .next()
-            .ok_or(SnbtDeserialisationError::eof("any character"))?;
-        if tag_start == '"' || tag_start == '\'' {
-            // SAFETY: We have just shown that the value cannot be zero.
-            quote_char = Some(unsafe { NonZero::new_unchecked(tag_start) })
-        } else {
-            quote_char = None;
-            result.push(tag_start);
-        };
+    let quote_char = visitor.next()
+        .ok_or(SnbtDeserialisationError::eof("one of \" or '"))?;
+    if quote_char != '"' || quote_char != '\'' {
+        return Err(SnbtDeserialisationError::unexpected("either \" or '", quote_char));
     }
 
-    while quote_char.is_some() || visitor.peek().map(|c| c != ':').unwrap_or(false) {
-        let c = match visitor.next() {
-            Some(c) => c,
-            None => return Err(SnbtDeserialisationError::eof("any tag character")),
-        };
-        if c == '\\' {
+    while let Some(c) = visitor.next() {
+        if c == quote_char {
+            result.shrink_to_fit();
+            return Ok(result);
+        } else if c == '\\' {
             result.push(parse_escape_sequence(visitor)?);
-        } else if quote_char.map(|q| c == q.into()).unwrap_or(false) {
-            break;
         } else {
             result.push(c);
         }
     }
-    result.shrink_to_fit();
+    Err(SnbtDeserialisationError::eof("any string character"))
+}
+
+/// Reads an unquoted SNBT string value. 
+/// Returns an [`Err`] variant if the first character doesn't match, 
+/// placing `visitor` over that character.
+/// 
+/// This algorithm is greedy, meaning it will consume all valid characters in a sequence.
+pub(crate) fn read_unquoted_string(visitor: &mut StrVisitor) -> Result<String> {
+    const START_EXPECTED: &'static str = "one of [a-zA-z]|-|\\+|\\.";
+    match visitor.peek().ok_or(SnbtDeserialisationError::eof(START_EXPECTED))? {
+        c if !char_may_start_unquoted(c) => 
+            return Err(SnbtDeserialisationError::unexpected(START_EXPECTED, c)),
+        _ => { }
+    }
+    
+    let mut result = String::new();
+    while let Some(c) = visitor.next_if(char_may_be_unquoted) {
+        // escape sequences are not allowed in unquoted strings
+        result.push(c)
+    }
     Ok(result)
+}
+
+fn char_may_be_unquoted(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '-' || c == '+' || c == '.'
+}
+fn char_may_start_unquoted(c: char) -> bool {
+    c.is_ascii_alphabetic() || c == '_'
 }
 
 /// read and evaluate an SNBT escape sequence.
@@ -147,16 +263,16 @@ fn parse_escape_sequence(visitor: &mut StrVisitor) -> Result<char> {
         's' => ' ',
         't' => '\t',
         'x' => {
-            todo!()
+            todo!("\\x")
         }
         'u' => {
-            todo!()
+            todo!("\\u")
         }
         'U' => {
-            todo!()
+            todo!("\\U")
         }
         'N' => {
-            todo!()
+            todo!("\\N")
         }
         c => {
             return Err(SnbtDeserialisationError::unexpected(

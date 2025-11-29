@@ -5,8 +5,9 @@ use crab_nbt::nbt::utils::*;
 use derive_more::From;
 use std::fmt::{self, Display, Formatter};
 use std::io::Cursor;
-use std::str::FromStr;
 
+use crate::impl_FromStr_through_FromVisitor;
+use crate::nbt::de_utils::{FromVisitor, StrVisitor};
 use crate::nbt::error::SnbtDeserialisationError;
 
 /// Enum representing the different types of NBT tags.
@@ -299,13 +300,24 @@ impl Display for NbtTag {
     }
 }
 
-impl FromStr for NbtTag {
+impl FromVisitor for NbtTag {
     type Err = SnbtDeserialisationError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        todo!()
+    fn from_visitor(visitor: &mut StrVisitor) -> Result<Self, Self::Err> {
+        const TRUE: NbtTag = NbtTag::Byte(1);
+        const FALSE: NbtTag = NbtTag::Byte(0);
+
+        match visitor.peek().ok_or(
+            SnbtDeserialisationError::eof("any SNBT character")
+        )? {
+            '{' => NbtCompound::from_visitor(visitor).map(NbtTag::Compound),
+            '[' => todo!("Lists and Arrays"),
+            c if is_number_character(c) => todo!("Numbers"),
+            _ => todo!("SNBT function, constant, or string")
+        }
     }
 }
+impl_FromStr_through_FromVisitor!(NbtTag);
 
 fn write_listlike<T: Display, I: IntoIterator<Item = T>>(
     f: &mut Formatter<'_>,
@@ -322,3 +334,83 @@ fn write_listlike<T: Display, I: IntoIterator<Item = T>>(
     )?;
     write!(f, "]")
 }
+
+fn is_number_character(c: char) -> bool {
+    c.is_ascii_digit() || c == '.'
+}
+
+// /// Tries to read a number from the visitor. 
+// /// If an invalid character is encountered, exits (returning the number read thus far)
+// fn read_number(visitor: &mut StrVisitor) -> de_utils::Result<NbtTag> {
+//     unimplemented!();
+//     // see https://minecraft.wiki/w/NBT_format#Number_format
+//     #[derive(PartialEq, Eq, Debug)]
+//     enum NumberMode {
+//         Hexadecimal,
+//         Binary,
+//         Decimal
+//     }
+//     #[derive(PartialEq, Eq, Debug)]
+//     enum TagType {
+//         Any,
+//         DoubleOrFloat,
+//         IntShortOrByte,
+//         Double,
+//         Float,
+//         Integer,
+//         Short,
+//         Byte
+//     }
+
+//     let string = visitor.as_str();
+//     let first_char = expect_condition(
+//         visitor,
+//         |c| c.is_ascii_digit() || c == '.',
+//         "one of [0-9]|\\."
+//     )?;
+//     let (numstring_start, mode, mut tag_type) = 
+//         if first_char == '0' {
+//             match visitor.next() {
+//                 Some(c) => match c {
+//                     'x' => {
+//                         (visitor.get_position(), NumberMode::Hexadecimal, TagType::IntShortOrByte)
+//                     },
+//                     'b' => {
+//                         (visitor.get_position(), NumberMode::Binary, TagType::IntShortOrByte)
+//                     },
+//                     '.' => {
+//                         // since previous two characters were 0 and . (both ASCII), two chars back is -2.
+//                         (visitor.get_position() - 2, NumberMode::Decimal, TagType::DoubleOrFloat)
+//                     }
+//                     c => (visitor.previous())
+//                 },
+//                 // only go back one position, because `string` is plainly "0".
+//                 // Visitor saturates its position, so 
+//                 None => (visitor.get_position() - 1, NumberMode::Decimal, TagType::Integer)
+//             }
+//         } else {
+//             // One of [1-9]|\., all of which are ASCII, therefore -1 is the position of first_char
+//             (
+//                 visitor.get_position() - 1,
+//                 NumberMode::Decimal,
+//                 if first_char == '.' { TagType::DoubleOrFloat }
+//                 else { TagType::Any }
+//             )
+//         };
+    
+//     while let Some(c) = visitor.peek() {
+//         match c {
+//             c if c.is_ascii_digit() => {
+//                 todo!()
+//             },
+//             '.' => {
+//                 if tag_type == TagType::Any {}
+//                 tag_type = TagType::DoubleOrFloat
+//             },
+//             _ => break
+//         }
+//         visitor.next();
+//     }
+
+//     todo!()
+// }
