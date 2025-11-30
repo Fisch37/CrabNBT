@@ -135,11 +135,11 @@ pub(crate) fn expect_char(chars: &mut dyn Iterator<Item = char>, expected: char)
 
 pub(crate) fn expect_condition<S: ToString, P: FnOnce(char) -> bool>(
     chars: &mut dyn Iterator<Item = char>,
-    match_condition: P,
+    predicate: P,
     expected: S,
 ) -> Result<char> {
     match chars.next().ok_or(SnbtDeserialisationError::eof("{"))? {
-        x if match_condition(x) => Ok(x),
+        x if predicate(x) => Ok(x),
         found => Err(SnbtDeserialisationError::unexpected(expected, found)),
     }
 }
@@ -238,10 +238,10 @@ pub(crate) fn read_unquoted_string(visitor: &mut StrVisitor) -> Result<String> {
     Ok(result)
 }
 
-fn char_may_be_unquoted(c: char) -> bool {
+pub(crate) fn char_may_be_unquoted(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '-' || c == '+' || c == '.'
 }
-fn char_may_start_unquoted(c: char) -> bool {
+pub(crate) fn char_may_start_unquoted(c: char) -> bool {
     c.is_ascii_alphabetic() || c == '_'
 }
 

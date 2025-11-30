@@ -191,6 +191,7 @@ impl FromVisitor for NbtCompound {
         let mut child_tags = vec![];
         while let Some(c) = visitor.peek() {
             if c == '}' {
+                _ = visitor.next();
                 return Ok(NbtCompound { child_tags });
             }
             consume_whitespace(visitor);

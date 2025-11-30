@@ -5,9 +5,10 @@ use crab_nbt::nbt::utils::*;
 use derive_more::From;
 use std::fmt::{self, Display, Formatter};
 use std::io::Cursor;
+use std::mem::{Discriminant, discriminant};
 
 use crate::impl_FromStr_through_FromVisitor;
-use crate::nbt::de_utils::{FromVisitor, StrVisitor};
+use crate::nbt::de_utils::{FromVisitor, StrVisitor, char_may_be_unquoted, consume_whitespace, expect_char, read_string};
 use crate::nbt::error::SnbtDeserialisationError;
 
 /// Enum representing the different types of NBT tags.
@@ -311,9 +312,50 @@ impl FromVisitor for NbtTag {
             SnbtDeserialisationError::eof("any SNBT character")
         )? {
             '{' => NbtCompound::from_visitor(visitor).map(NbtTag::Compound),
-            '[' => todo!("Lists and Arrays"),
+            '[' => {
+                _ = visitor.next();
+                consume_whitespace(visitor);
+                if visitor.next_if(|c| c == ']').is_some() {
+                    Ok(NbtTag::List(vec![]))
+                } else if visitor.as_str().chars().nth(1).filter(|c| *c == ';').is_some() {
+                    // we know visitor.nth(1) will be Some and StrVisitor is fused
+                    // => visitor.next must be Some
+                    match visitor.next().unwrap() {
+                        'I' => todo!("Int array"),
+                        'B' => todo!("Byte array"),
+                        'L' => todo!("Long array"),
+                        c => return Err(
+                            SnbtDeserialisationError::unexpected("an array type identifier", c)
+                        )
+                    }
+                } else {
+                    // NOTE: This branch also triggers if visitor is fully consumed
+                    read_list(visitor).map(NbtTag::List)
+                }
+            },
             c if is_number_character(c) => todo!("Numbers"),
-            _ => todo!("SNBT function, constant, or string")
+            _ => {
+                if match_expect_constant(visitor, "true") {
+                    Ok(TRUE)
+                } else if match_expect_constant(visitor, "false") {
+                    Ok(FALSE)
+                } else if match_expect_constant(visitor, "bool(") {
+                    consume_whitespace(visitor);
+                    todo!("Read number or read true/false");
+                    consume_whitespace(visitor);
+                    expect_char(visitor, ')')?;
+                } else if match_expect_constant(visitor, "uuid(") {
+                    consume_whitespace(visitor);
+                    let tag = uuid_from_str(&read_string(visitor)?)
+                        .map(NbtTag::IntArray);
+                    
+                    consume_whitespace(visitor);
+                    expect_char(visitor, ')')?;
+                    tag
+                } else {
+                    read_string(visitor).map(NbtTag::String)
+                }
+            }
         }
     }
 }
@@ -337,6 +379,96 @@ fn write_listlike<T: Display, I: IntoIterator<Item = T>>(
 
 fn is_number_character(c: char) -> bool {
     c.is_ascii_digit() || c == '.'
+}
+
+fn match_expect_constant(visitor: &mut StrVisitor, name: &str) -> bool {
+    let mut visitor_clone = visitor.clone();
+    let mut name_length = 0usize;
+    for match_char in name.chars() {
+        let c = match visitor_clone.next() {
+            None => return false,
+            Some(x) => x
+        };
+        if c != match_char {
+            return false;
+        }
+        name_length += 1;
+    }
+    let matches = visitor.peek().filter(|c| char_may_be_unquoted(*c)).is_none();
+    if matches {
+        for _ in 0..name_length {
+            visitor.next();
+        }
+    }
+    matches
+}
+
+fn uuid_from_str(s: &str) -> Result<Vec<i32>, SnbtDeserialisationError> {
+    let uuid_parts: Vec<i64> = s.split('-')
+            .map(|part| i64::from_str_radix(part, 16))
+            .map(|res| res.unwrap_or_else(|_| todo!("Better error structures")))
+            .collect();
+    if uuid_parts.len() != 5 {
+        Err(todo!("Better error structures"))
+    } else {
+        // c2-70-a8-46  
+        //              c9-30  4c-9f
+        //                            87-f3  ba-06-
+        //                                         7e-3f-7c-72
+        Ok(vec![
+            uuid_parts[0] as i32,
+            ((uuid_parts[1] << i16::BITS) + uuid_parts[2]) as i32,
+            ((uuid_parts[3] << i16::BITS) + (uuid_parts[4] >> i32::BITS)) as i32,
+            uuid_parts[5] as i32
+        ])
+    }
+}
+
+/// Reads an SNBT List with correction for heterogeneous lists.
+/// Assumes the opening `[` character has already been consumed.
+fn read_list(visitor: &mut StrVisitor) -> Result<Vec<NbtTag>, SnbtDeserialisationError> {
+    let mut content = vec![];
+    let mut homogeneous_content_type: Option<Option<Discriminant<NbtTag>>> = None;
+    loop {
+        consume_whitespace(visitor);
+        let tag = NbtTag::from_visitor(visitor)?;
+        homogeneous_content_type = homogeneous_content_type.map_or(
+            Some(Some(discriminant(&tag))),
+            |list_content| 
+            Some(list_content.filter(|d| *d == discriminant(&tag)))
+        );
+        content.push(tag);
+
+        consume_whitespace(visitor);
+
+        if visitor.next_if(|c| c == ',' || c == ']')
+            .ok_or_else(|| {
+                // FIXME: Horrible code (duplicates peek in next_if)
+                //  Must be fixed once todo!("better error structures") is finished
+                match visitor.peek() {
+                    None => SnbtDeserialisationError::eof(", or ]"),
+                    Some(c) => SnbtDeserialisationError::unexpected(", or ]", c)
+                }
+            })? == ']'
+        {
+            break
+        }
+    }
+    if homogeneous_content_type.unwrap_or(Some(discriminant(&NbtTag::End))).is_none() {
+        // Heterogeneous List correction
+        // Nbt does not allow hetereogeneous lists
+        // (lists where each element may have a different type),
+        // but SNBT does (since https://www.minecraft.net/en-us/article/minecraft-snapshot-25w09a).
+        // 
+        // Heterogenous lists must be deserialised into lists of type NbtCompound,
+        // with each element contained in a compound like so {"": element}
+        content = content.into_iter().map(|elem| {
+            [(String::new(), elem)].into_iter().collect::<NbtCompound>().into()
+        }).collect();
+    } else {
+        content.shrink_to_fit();
+    }
+    Ok(content)
 }
 
 // /// Tries to read a number from the visitor. 
