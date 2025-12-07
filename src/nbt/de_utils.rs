@@ -187,6 +187,15 @@ pub(crate) fn consume_whitespace(visitor: &mut StrVisitor) {
     consume_while(visitor, |c| c.is_whitespace())
 }
 
+pub(crate) fn read_slice_while<'a, P>(visitor: &mut StrVisitor<'a>, mut predicate: P) -> &'a str
+    where P: FnMut(char) -> bool
+{
+    let start_position = visitor.get_position();
+    let slice = visitor.as_str();
+    while visitor.next_if(&mut predicate).is_some() { }
+    &slice[..(visitor.get_position() - start_position)]
+}
+
 pub(crate) fn read_string(visitor: &mut StrVisitor) -> Result<String> {
     let first_char = visitor.peek()
         .ok_or(SnbtDeserialisationError::eof("quote or any tag character"))?;

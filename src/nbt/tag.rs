@@ -6,9 +6,10 @@ use derive_more::From;
 use std::fmt::{self, Display, Formatter};
 use std::io::Cursor;
 use std::mem::{Discriminant, discriminant};
+use std::str::FromStr;
 
 use crate::impl_FromStr_through_FromVisitor;
-use crate::nbt::de_utils::{FromVisitor, StrVisitor, char_may_be_unquoted, consume_whitespace, expect_char, read_string};
+use crate::nbt::de_utils::{FromVisitor, StrVisitor, char_may_be_unquoted, consume_whitespace, expect_char, read_slice_while, read_string};
 use crate::nbt::error::SnbtDeserialisationError;
 
 /// Enum representing the different types of NBT tags.
@@ -321,9 +322,11 @@ impl FromVisitor for NbtTag {
                     // we know visitor.nth(1) will be Some and StrVisitor is fused
                     // => visitor.next must be Some
                     match visitor.next().unwrap() {
-                        'I' => todo!("Int array"),
-                        'B' => todo!("Byte array"),
-                        'L' => todo!("Long array"),
+                        'I' => read_snbt_array::<i32>(visitor).map(NbtTag::IntArray),
+                        'B' => read_snbt_array::<i8>(visitor).map(
+                            |arr| NbtTag::ByteArray(arr.into_iter().map(|b| b as u8).collect())
+                        ),
+                        'L' => read_snbt_array::<i64>(visitor).map(NbtTag::LongArray),
                         c => return Err(
                             SnbtDeserialisationError::unexpected("an array type identifier", c)
                         )
@@ -333,7 +336,7 @@ impl FromVisitor for NbtTag {
                     read_list(visitor).map(NbtTag::List)
                 }
             },
-            c if is_number_character(c) => todo!("Numbers"),
+            c if is_number_character(c) => read_number_decimal(visitor),
             _ => {
                 if match_expect_constant(visitor, "true") {
                     Ok(TRUE)
@@ -424,6 +427,8 @@ fn uuid_from_str(s: &str) -> Result<Vec<i32>, SnbtDeserialisationError> {
     }
 }
 
+
+const LIST_SEPARATOR_MSG: &'static str = ", or ]";
 /// Reads an SNBT List with correction for heterogeneous lists.
 /// Assumes the opening `[` character has already been consumed.
 fn read_list(visitor: &mut StrVisitor) -> Result<Vec<NbtTag>, SnbtDeserialisationError> {
@@ -446,8 +451,8 @@ fn read_list(visitor: &mut StrVisitor) -> Result<Vec<NbtTag>, SnbtDeserialisatio
                 // FIXME: Horrible code (duplicates peek in next_if)
                 //  Must be fixed once todo!("better error structures") is finished
                 match visitor.peek() {
-                    None => SnbtDeserialisationError::eof(", or ]"),
-                    Some(c) => SnbtDeserialisationError::unexpected(", or ]", c)
+                    None => SnbtDeserialisationError::eof(LIST_SEPARATOR_MSG),
+                    Some(c) => SnbtDeserialisationError::unexpected(LIST_SEPARATOR_MSG, c)
                 }
             })? == ']'
         {
@@ -471,78 +476,103 @@ fn read_list(visitor: &mut StrVisitor) -> Result<Vec<NbtTag>, SnbtDeserialisatio
     Ok(content)
 }
 
-// /// Tries to read a number from the visitor. 
-// /// If an invalid character is encountered, exits (returning the number read thus far)
-// fn read_number(visitor: &mut StrVisitor) -> de_utils::Result<NbtTag> {
-//     unimplemented!();
-//     // see https://minecraft.wiki/w/NBT_format#Number_format
-//     #[derive(PartialEq, Eq, Debug)]
-//     enum NumberMode {
-//         Hexadecimal,
-//         Binary,
-//         Decimal
-//     }
-//     #[derive(PartialEq, Eq, Debug)]
-//     enum TagType {
-//         Any,
-//         DoubleOrFloat,
-//         IntShortOrByte,
-//         Double,
-//         Float,
-//         Integer,
-//         Short,
-//         Byte
-//     }
+/// Reads an SNBT array of type Number,
+/// assuming the array identifier (e.g. `[I;`) has already been consumed.
+fn read_snbt_array<Number>(
+    visitor: &mut StrVisitor
+) -> Result<Vec<Number>, SnbtDeserialisationError>
+    where Number: FromStr
+{
+    let mut content = vec![];
+    loop {
+        consume_whitespace(visitor);
+        content.push(
+            read_slice_while(visitor, |c| c.is_ascii_digit() && c == '-')
+                .parse().map_err(|_| todo!("better error structures"))?
+        );
 
-//     let string = visitor.as_str();
-//     let first_char = expect_condition(
-//         visitor,
-//         |c| c.is_ascii_digit() || c == '.',
-//         "one of [0-9]|\\."
-//     )?;
-//     let (numstring_start, mode, mut tag_type) = 
-//         if first_char == '0' {
-//             match visitor.next() {
-//                 Some(c) => match c {
-//                     'x' => {
-//                         (visitor.get_position(), NumberMode::Hexadecimal, TagType::IntShortOrByte)
-//                     },
-//                     'b' => {
-//                         (visitor.get_position(), NumberMode::Binary, TagType::IntShortOrByte)
-//                     },
-//                     '.' => {
-//                         // since previous two characters were 0 and . (both ASCII), two chars back is -2.
-//                         (visitor.get_position() - 2, NumberMode::Decimal, TagType::DoubleOrFloat)
-//                     }
-//                     c => (visitor.previous())
-//                 },
-//                 // only go back one position, because `string` is plainly "0".
-//                 // Visitor saturates its position, so 
-//                 None => (visitor.get_position() - 1, NumberMode::Decimal, TagType::Integer)
-//             }
-//         } else {
-//             // One of [1-9]|\., all of which are ASCII, therefore -1 is the position of first_char
-//             (
-//                 visitor.get_position() - 1,
-//                 NumberMode::Decimal,
-//                 if first_char == '.' { TagType::DoubleOrFloat }
-//                 else { TagType::Any }
-//             )
-//         };
+        consume_whitespace(visitor);
+        if visitor.next_if(|c| c == ',' || c == ']').ok_or_else(
+            || match visitor.peek() {
+                None => SnbtDeserialisationError::eof(LIST_SEPARATOR_MSG),
+                Some(c) => SnbtDeserialisationError::unexpected(LIST_SEPARATOR_MSG, c)
+            }
+        )? == ']' {
+            break
+        }
+    }
+    Ok(content)
+}
+
+fn read_number(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationError> {
+    let mut chars = visitor.as_str().chars();
+    if chars.next().map(|c| c == '0').unwrap_or(false) {
+        match chars.next() {
+            Some('x' | 'X') => read_number_radix(visitor, 16),
+            Some('b' | 'B')
+                if chars.next().map_or(false, |c| c == '0' || c == '1')
+                => read_number_radix(visitor, 2),
+            _ => read_number_decimal(visitor)
+        }
+    } else {
+        read_number_decimal(visitor)
+    }
+}
+
+fn read_number_decimal(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationError> {
+    let mut read_decimal_point = false;
+    let number_str = read_slice_while(visitor, |c| {
+        // [0-9]|-|.|e|E
+        if c == '.' {
+            read_decimal_point = true;
+        }
+        c.is_ascii_digit() || c == '-' || c == '.' || c == 'e' || c == 'E'
+    });
     
-//     while let Some(c) = visitor.peek() {
-//         match c {
-//             c if c.is_ascii_digit() => {
-//                 todo!()
-//             },
-//             '.' => {
-//                 if tag_type == TagType::Any {}
-//                 tag_type = TagType::DoubleOrFloat
-//             },
-//             _ => break
-//         }
-//         visitor.next();
-//     }
+    match visitor.next() {
+        Some('b' | 'B') => number_from_string(number_str, NbtTag::Byte),
+        Some('s' | 'S') => number_from_string(number_str, NbtTag::Short),
+        Some('i' | 'I') => number_from_string(number_str, NbtTag::Int),
+        Some('l' | 'L') => number_from_string(number_str, NbtTag::Long),
+        Some('f' | 'F') => number_from_string(number_str, NbtTag::Float),
+        Some('d' | 'D') => number_from_string(number_str, NbtTag::Double),
+        Some('u' | 'U') => todo!("Unsigned suffix"),
+        _ => {
+            // no number type identifier, no character should have been read
+            // (it's easier and faster to undo here than to use next_if)
+            visitor.previous();
+            if read_decimal_point {
+                number_from_string(number_str, NbtTag::Double)
+            } else {
+                number_from_string(number_str, NbtTag::Int)
+            }
+        }
+    }
+}
 
-//     todo!()
-// }
+fn read_number_radix(
+    visitor: &mut StrVisitor,
+    radix: u32
+) -> Result<NbtTag, SnbtDeserialisationError> {
+    todo!("Radix numbers")
+}
+
+fn number_from_string<Number, M, T>(s: &str, mapper: M) -> Result<T, SnbtDeserialisationError>
+    where Number: FromStr, M: FnOnce(Number) -> T
+{
+    s.parse().map_err(|_| todo!("better error structures")).map(mapper)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{NbtTag, nbt::{de_utils::StrVisitor, tag::read_number}};
+
+    fn number_helper(s: &str) -> NbtTag {
+        read_number(&mut StrVisitor::new(s)).unwrap()
+    }
+
+    #[test]
+    fn test_numbers() {
+        assert_eq!(number_helper("1.5"), NbtTag::Double(1.5));
+    }
+}
