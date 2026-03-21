@@ -78,6 +78,25 @@ impl<'a> StrVisitor<'a> {
     pub fn get_slice(&self) -> &'a str {
         self.slice
     }
+
+    /// Returns the string slice after ahead and before self,
+    /// if ahead is advanced at least as far as self and both refer to the same string slice.
+    /// 
+    /// If ahead is behind self, returns [`None`].
+    /// 
+    /// # Panics
+    /// ...if self and ahead point to different string, even if one is a substring of the other.
+    pub fn get_slice_up_to(&self, ahead: &StrVisitor<'a>) -> Option<&'a str> {
+        if self.slice != ahead.slice {
+            panic!("get_slice_up_to called on visitors to different strings");
+        } else if ahead.position < self.position {
+            None
+        } else {
+            // No panic: ahead.position >= self.position (checked above)
+            //  StrVisitor always ensures that position is on a char boundary
+            Some(&self.slice[self.position..ahead.position])
+        }
+    }
 }
 impl<'a> Clone for StrVisitor<'a> {
     /// Creates another visitor, backed by the same slice at the current position
@@ -167,13 +186,14 @@ pub(crate) fn consume_whitespace(visitor: &mut StrVisitor) {
     consume_while(visitor, |c| c.is_whitespace())
 }
 
-pub(crate) fn read_slice_while<'a, P>(visitor: &mut StrVisitor<'a>, mut predicate: P) -> &'a str
+pub(crate) fn read_slice_while<'a, P>(visitor: &mut StrVisitor<'a>, condition: P) -> &'a str
     where P: FnMut(char) -> bool
 {
-    let start_position = visitor.get_position();
-    let slice = visitor.as_str();
-    while visitor.next_if(&mut predicate).is_some() { }
-    &slice[..(visitor.get_position() - start_position)]
+    let start = visitor.clone();
+    consume_while(visitor, condition);
+    start.get_slice_up_to(visitor)
+        // TODO: Remove this sketchy expect
+        .expect("visitor should be further advanced than start in read_slice_while, but isn't")
 }
 
 pub(crate) fn read_string(visitor: &mut StrVisitor) -> Result<String> {
@@ -230,10 +250,12 @@ pub(crate) fn read_unquoted_string(visitor: &mut StrVisitor) -> Result<String> {
 }
 
 pub(crate) fn char_may_be_unquoted(c: char) -> bool {
-    c.is_ascii_alphanumeric() || c == '-' || c == '+' || c == '.'
+    c.is_ascii_alphanumeric() || c == '-' || c == '+' || c == '.' || c == '_'
 }
 pub(crate) fn char_may_start_unquoted(c: char) -> bool {
-    c.is_ascii_alphabetic() || c == '_'
+    // TODO: I think something went missing here.
+    // There should be some character may _not_ start an unquoted string
+    c.is_ascii_alphabetic()
 }
 
 /// read and evaluate an SNBT escape sequence.

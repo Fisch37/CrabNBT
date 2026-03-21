@@ -381,8 +381,11 @@ fn write_listlike<T: Display, I: IntoIterator<Item = T>>(
     write!(f, "]")
 }
 
+/// Returns true if `c` is a character that may appear in a number.
+/// This also includes decimals and includes characters
+/// that may only appear at the start of a number (such as `-`).
 fn is_number_character(c: char) -> bool {
-    c.is_ascii_digit() || c == '.'
+    c.is_ascii_digit() || c == '.' || c == '-'
 }
 
 fn match_expect_constant(visitor: &mut StrVisitor, name: &str) -> bool {
@@ -408,12 +411,19 @@ fn match_expect_constant(visitor: &mut StrVisitor, name: &str) -> bool {
 }
 
 fn uuid_from_str(s: &str) -> Result<Vec<i32>, SnbtDeserialisationError> {
-    let uuid_parts: Vec<i64> = s.split('-')
-            .map(|part| i64::from_str_radix(part, 16))
-            .map(|res| res.unwrap_or_else(|_| todo!("Better error structures")))
-            .collect();
+    let mut uuid_parts: Vec<i64> = Vec::with_capacity(4); // UUIDv4 has 4 parts
+    {
+        let uuid_it = s.split('-')
+                .map(|part| i64::from_str_radix(part, 16));
+        for res in uuid_it {
+            match res {
+                Ok(part) => uuid_parts.push(part),
+                Err(_) => todo!("Better error structures")
+            }
+        }
+    }
     if uuid_parts.len() != 5 {
-        Err(todo!("Better error structures"))
+        todo!("Better error structures")
     } else {
         // c2-70-a8-46  
         //              c9-30  4c-9f
@@ -473,18 +483,24 @@ fn read_list(visitor: &mut StrVisitor) -> Result<Vec<NbtTag>, SnbtDeserialisatio
 }
 
 /// Reads an SNBT array of type Number,
-/// assuming the array identifier (e.g. `[I;`) has already been consumed.
+/// assuming the array identifier (e.g. `[I;`) has already been consumed, save for the semicolon.
 fn read_snbt_array<Number>(
     visitor: &mut StrVisitor
 ) -> Result<Vec<Number>, SnbtDeserialisationError>
-    where Number: FromStr
+    where Number: FromStr,
+        // TODO: Remove me after better error structures
+        Number::Err: std::error::Error
 {
+    consume_whitespace(visitor);
+    // This was missing once. It took me days to find that bug!
+    expect_char(visitor, ';', ";")?;
     let mut content = vec![];
     loop {
         consume_whitespace(visitor);
         content.push(
-            read_slice_while(visitor, |c| c.is_ascii_digit() && c == '-')
-                .parse().map_err(|_| todo!("better error structures"))?
+            read_slice_while(visitor, |c| c.is_ascii_digit() || c == '-')
+                .parse()
+                .expect("todo: better error structures")
         );
 
         consume_whitespace(visitor);
@@ -551,9 +567,11 @@ fn read_number_radix(
 }
 
 fn number_from_string<Number, M, T>(s: &str, mapper: M) -> Result<T, SnbtDeserialisationError>
-    where Number: FromStr, M: FnOnce(Number) -> T
+    where Number: FromStr, M: FnOnce(Number) -> T,
+        // TODO: Remove me after better error structures
+        Number::Err: std::fmt::Debug
 {
-    s.parse().map_err(|_| todo!("better error structures")).map(mapper)
+    s.parse().map_err(|e| todo!("better error structures {e:?}")).map(mapper)
 }
 
 #[cfg(test)]
