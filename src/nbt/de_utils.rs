@@ -27,7 +27,7 @@ macro_rules! impl_FromStr_through_FromVisitor {
                     .and_then(|res| {
                         match visitor.peek() {
                             None => Ok(res),
-                            Some(c) => Err(SnbtDeserialisationError::unexpected("EOF", c))
+                            Some(_) => Err(SnbtDeserialisationError::from_visitor(&visitor, "EOF"))
                         }
                     })
             }
@@ -73,6 +73,10 @@ impl<'a> StrVisitor<'a> {
 
     pub fn get_position(&self) -> usize {
         return self.position
+    }
+
+    pub fn get_slice(&self) -> &'a str {
+        self.slice
     }
 }
 impl<'a> Clone for StrVisitor<'a> {
@@ -129,47 +133,23 @@ fn previous_char_boundary(slice: &str, index: usize) -> usize {
     0
 }
 
-pub(crate) fn expect_char(chars: &mut dyn Iterator<Item = char>, expected: char) -> Result<()> {
-    expect_condition(chars, &|c| c == expected, expected).map(|_| ())
+pub(crate) fn expect_char(
+    visitor: &mut StrVisitor,
+    expected_char: char,
+    expected: &'static str
+) -> Result<()> {
+    expect_condition(visitor, &|c| c == expected_char, expected).map(|_| ())
 }
 
-pub(crate) fn expect_condition<S: ToString, P: FnOnce(char) -> bool>(
-    chars: &mut dyn Iterator<Item = char>,
+pub(crate) fn expect_condition<'a, P: FnOnce(char) -> bool>(
+    visitor: &mut StrVisitor,
     predicate: P,
-    expected: S,
+    expected: &'static str,
 ) -> Result<char> {
-    match chars.next().ok_or(SnbtDeserialisationError::eof("{"))? {
-        x if predicate(x) => Ok(x),
-        found => Err(SnbtDeserialisationError::unexpected(expected, found)),
+    match visitor.next() {
+        Some(x) if predicate(x) => Ok(x),
+        _ => Err(SnbtDeserialisationError::from_visitor(visitor, expected)),
     }
-}
-
-/// Expect a literal series of characters in `chars`, matching `expected`.
-/// 
-/// If the iterators don't match,
-/// returns an Err variant with [`SnbtDeserialisationError::unexpected`] and `chars` and `expected`
-/// will be positioned _after_ the mismatched characters.
-/// 
-/// If `chars` is shorter than `expected`, returns an Err with [`SnbtDeserialisationError::eof`].
-pub(crate) fn expect_literal(
-    chars: &mut dyn Iterator<Item = char>,
-    expected: &mut dyn Iterator<Item = char>
-) -> Result<()> {
-    for expected_char in expected {
-        let current_char = chars.next()
-            .ok_or(SnbtDeserialisationError::eof(expected_char))?;
-        if expected_char != current_char {
-            return Err(SnbtDeserialisationError::unexpected(expected_char, current_char));
-        }
-    }
-    Ok(())
-}
-
-pub(crate) fn expect_string(
-    chars: &mut dyn Iterator<Item = char>,
-    expected: &str
-) -> Result<()> {
-    expect_literal(chars, &mut expected.chars())
 }
 
 pub(crate) fn consume_while<P>(visitor: &mut StrVisitor, mut condition: P)
@@ -198,7 +178,10 @@ pub(crate) fn read_slice_while<'a, P>(visitor: &mut StrVisitor<'a>, mut predicat
 
 pub(crate) fn read_string(visitor: &mut StrVisitor) -> Result<String> {
     let first_char = visitor.peek()
-        .ok_or(SnbtDeserialisationError::eof("quote or any tag character"))?;
+        .ok_or(SnbtDeserialisationError::from_visitor(
+            visitor,
+            "quote or any unquotable character"
+        ))?;
     match first_char {
         '"' | '\'' => read_quoted_string(visitor),
         _ => read_unquoted_string(visitor)
@@ -207,11 +190,11 @@ pub(crate) fn read_string(visitor: &mut StrVisitor) -> Result<String> {
 
 pub(crate) fn read_quoted_string(visitor: &mut StrVisitor) -> Result<String> {
     let mut result = String::new();
-    let quote_char = visitor.next()
-        .ok_or(SnbtDeserialisationError::eof("one of \" or '"))?;
-    if quote_char != '"' || quote_char != '\'' {
-        return Err(SnbtDeserialisationError::unexpected("either \" or '", quote_char));
-    }
+    let quote_char = expect_condition(
+        visitor,
+        |c| c == '"' || c == '\'',
+        "a quote character"
+    )?;
 
     while let Some(c) = visitor.next() {
         if c == quote_char {
@@ -223,7 +206,7 @@ pub(crate) fn read_quoted_string(visitor: &mut StrVisitor) -> Result<String> {
             result.push(c);
         }
     }
-    Err(SnbtDeserialisationError::eof("any string character"))
+    Err(SnbtDeserialisationError::from_visitor(visitor, "a quote character"))
 }
 
 /// Reads an unquoted SNBT string value. 
@@ -233,10 +216,9 @@ pub(crate) fn read_quoted_string(visitor: &mut StrVisitor) -> Result<String> {
 /// This algorithm is greedy, meaning it will consume all valid characters in a sequence.
 pub(crate) fn read_unquoted_string(visitor: &mut StrVisitor) -> Result<String> {
     const START_EXPECTED: &'static str = "one of [a-zA-z]|-|\\+|\\.";
-    match visitor.peek().ok_or(SnbtDeserialisationError::eof(START_EXPECTED))? {
-        c if !char_may_start_unquoted(c) => 
-            return Err(SnbtDeserialisationError::unexpected(START_EXPECTED, c)),
-        _ => { }
+    match visitor.peek() {
+        Some(c) if char_may_start_unquoted(c) => { },
+        _ => return Err(SnbtDeserialisationError::from_visitor(visitor, START_EXPECTED))
     }
     
     let mut result = String::new();
@@ -257,9 +239,13 @@ pub(crate) fn char_may_start_unquoted(c: char) -> bool {
 /// read and evaluate an SNBT escape sequence.
 /// Assumes the \ character was already read.
 fn parse_escape_sequence(visitor: &mut StrVisitor) -> Result<char> {
+    const ESCAPABLE_CHARACTER: &'static str = "any escapable character";
     let escaped_char = visitor
         .next()
-        .ok_or(SnbtDeserialisationError::eof("any escapable character"))?;
+        .ok_or_else(|| SnbtDeserialisationError::from_visitor(
+            &visitor,
+            ESCAPABLE_CHARACTER
+        ))?;
     // see https://minecraft.wiki/w/NBT_format#Escape_sequences
     Ok(match escaped_char {
         '\\' => '\\',
@@ -283,10 +269,10 @@ fn parse_escape_sequence(visitor: &mut StrVisitor) -> Result<char> {
         'N' => {
             todo!("\\N")
         }
-        c => {
-            return Err(SnbtDeserialisationError::unexpected(
-                "any escapable character",
-                c,
+        _ => {
+            return Err(SnbtDeserialisationError::from_visitor(
+                visitor,
+                ESCAPABLE_CHARACTER
             ))
         }
     })

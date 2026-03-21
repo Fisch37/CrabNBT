@@ -136,18 +136,18 @@ impl FromVisitor for Nbt {
     type Err = SnbtDeserialisationError;
 
     fn from_visitor(visitor: &mut StrVisitor) -> Result<Self, Self::Err> {
-        expect_char(visitor, '{')?;
+        expect_char(visitor, '{', "{")?;
         consume_whitespace(visitor);
 
         let name = read_string(visitor)?;
         consume_whitespace(visitor);
 
-        expect_char(visitor, ':')?;
+        expect_char(visitor, ':', ":")?;
         consume_whitespace(visitor);
 
         let root_tag = NbtCompound::from_visitor(visitor)?;
         consume_whitespace(visitor);
-        expect_char(visitor, '}')?;
+        expect_char(visitor, '}', "}")?;
 
         Ok(Self {
             name,

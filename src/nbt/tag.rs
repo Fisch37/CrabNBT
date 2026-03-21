@@ -309,8 +309,8 @@ impl FromVisitor for NbtTag {
         const TRUE: NbtTag = NbtTag::Byte(1);
         const FALSE: NbtTag = NbtTag::Byte(0);
 
-        match visitor.peek().ok_or(
-            SnbtDeserialisationError::eof("any SNBT character")
+        match visitor.peek().ok_or_else(
+            || SnbtDeserialisationError::from_visitor(visitor, "any SNBT character")
         )? {
             '{' => NbtCompound::from_visitor(visitor).map(NbtTag::Compound),
             '[' => {
@@ -327,9 +327,10 @@ impl FromVisitor for NbtTag {
                             |arr| NbtTag::ByteArray(arr.into_iter().map(|b| b as u8).collect())
                         ),
                         'L' => read_snbt_array::<i64>(visitor).map(NbtTag::LongArray),
-                        c => return Err(
-                            SnbtDeserialisationError::unexpected("an array type identifier", c)
-                        )
+                        c => return Err(SnbtDeserialisationError::from_visitor(
+                            visitor,
+                            "an array type identifier"
+                        ))
                     }
                 } else {
                     // NOTE: This branch also triggers if visitor is fully consumed
@@ -346,14 +347,14 @@ impl FromVisitor for NbtTag {
                     consume_whitespace(visitor);
                     todo!("Read number or read true/false");
                     consume_whitespace(visitor);
-                    expect_char(visitor, ')')?;
+                    expect_char(visitor, ')', ")")?;
                 } else if match_expect_constant(visitor, "uuid(") {
                     consume_whitespace(visitor);
                     let tag = uuid_from_str(&read_string(visitor)?)
                         .map(NbtTag::IntArray);
                     
                     consume_whitespace(visitor);
-                    expect_char(visitor, ')')?;
+                    expect_char(visitor, ')', ")")?;
                     tag
                 } else {
                     read_string(visitor).map(NbtTag::String)
@@ -447,14 +448,9 @@ fn read_list(visitor: &mut StrVisitor) -> Result<Vec<NbtTag>, SnbtDeserialisatio
         consume_whitespace(visitor);
 
         if visitor.next_if(|c| c == ',' || c == ']')
-            .ok_or_else(|| {
-                // FIXME: Horrible code (duplicates peek in next_if)
-                //  Must be fixed once todo!("better error structures") is finished
-                match visitor.peek() {
-                    None => SnbtDeserialisationError::eof(LIST_SEPARATOR_MSG),
-                    Some(c) => SnbtDeserialisationError::unexpected(LIST_SEPARATOR_MSG, c)
-                }
-            })? == ']'
+            .ok_or_else(||
+                SnbtDeserialisationError::from_visitor(visitor, LIST_SEPARATOR_MSG)
+            )? == ']'
         {
             break
         }
@@ -493,10 +489,7 @@ fn read_snbt_array<Number>(
 
         consume_whitespace(visitor);
         if visitor.next_if(|c| c == ',' || c == ']').ok_or_else(
-            || match visitor.peek() {
-                None => SnbtDeserialisationError::eof(LIST_SEPARATOR_MSG),
-                Some(c) => SnbtDeserialisationError::unexpected(LIST_SEPARATOR_MSG, c)
-            }
+            || SnbtDeserialisationError::from_visitor(visitor, LIST_SEPARATOR_MSG)
         )? == ']' {
             break
         }

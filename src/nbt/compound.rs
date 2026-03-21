@@ -186,7 +186,7 @@ impl FromVisitor for NbtCompound {
     type Err = SnbtDeserialisationError;
 
     fn from_visitor(visitor: &mut StrVisitor) -> Result<Self, Self::Err> {
-        expect_char(visitor, '{')?;
+        expect_char(visitor, '{', "{")?;
 
         let mut child_tags = vec![];
         while let Some(c) = visitor.peek() {
@@ -198,18 +198,18 @@ impl FromVisitor for NbtCompound {
             let name = read_string(visitor)?;
             
             consume_whitespace(visitor);
-            expect_char(visitor, ':')?;
+            expect_char(visitor, ':', ":")?;
             consume_whitespace(visitor);
 
             let tag = NbtTag::from_visitor(visitor)?;
             consume_whitespace(visitor);
             if visitor.peek().filter(|c| *c == '}').is_none() {
-                expect_char(visitor, ',')?;
+                expect_char(visitor, ',', ",")?;
             }
 
             child_tags.push((name, tag));
         }
-        Err(SnbtDeserialisationError::eof('}'))
+        Err(SnbtDeserialisationError::from_visitor(visitor, "}"))
     }
 }
 impl_FromStr_through_FromVisitor!(NbtCompound);

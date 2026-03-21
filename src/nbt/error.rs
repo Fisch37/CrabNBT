@@ -1,35 +1,42 @@
 use std::{error::Error, fmt::Display};
 
+use crate::nbt::de_utils::StrVisitor;
+
 #[derive(Debug)]
 pub struct SnbtDeserialisationError {
-    pub expected: String,
-    pub found: Option<char>,
+    pub index: usize,
+    pub offending_area: String,
+    pub expected: &'static str
 }
+const MAX_OFFENSE_INFO_LENGTH: usize = 12;
 impl SnbtDeserialisationError {
-    fn new<S: ToString>(expected: S, found: Option<char>) -> Self {
+    pub fn from_visitor(visitor: &StrVisitor, expected: &'static str) -> Self {
+        // get at most {MAX_OFFENSE_INFO_LENGTH} characters before the offending character
+        let offending_area = visitor.get_slice()[..visitor.get_position()]
+            .chars()
+            .rev()
+            .take(MAX_OFFENSE_INFO_LENGTH)
+            // this extra allocation is sadly unavoidable without significant (and bug prone) effort
+            .collect::<Vec<char>>()
+            .iter()
+            .rev()
+            .collect()
+            ;
         SnbtDeserialisationError {
-            expected: expected.to_string(),
-            found,
+            index: visitor.get_position(),
+            offending_area,
+            expected
         }
-    }
-
-    pub fn eof<S: ToString>(expected: S) -> Self {
-        Self::new(expected, None)
-    }
-
-    pub fn unexpected<S: ToString>(expected: S, found: char) -> Self {
-        Self::new(expected, Some(found))
     }
 }
 impl Display for SnbtDeserialisationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Expected {}, found {}",
+            "Expected {} at position {}: {} <--[HERE]",
             self.expected,
-            self.found
-                .map(|char| char.into())
-                .unwrap_or("EOF".to_string())
+            self.index,
+            self.offending_area
         )
     }
 }
