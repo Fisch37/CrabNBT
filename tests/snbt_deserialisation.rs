@@ -30,7 +30,16 @@ fn nbt_list() {
             wrap(NbtTag::String("B".to_string())),
             wrap(NbtTag::Compound(NbtCompound::new()))
         ])
-    )
+    );
+    assert_eq!(
+        tag_helper("[\"A\", \"B\", C, \"D\", E]"),
+        NbtTag::List(
+            "ABCDE".chars()
+                .map(|c| c.to_string())
+                .map(NbtTag::String)
+                .collect()
+        )
+    );
 }
 
 #[test]
@@ -41,4 +50,11 @@ fn nbt_compound() {
             "components": []
         }).into()
     )
+}
+
+#[test]
+fn big_data_parser() {
+    let input = include_str!("data/bigdata.snbt");
+    let nbt = NbtCompound::from_str(input).unwrap();
+    println!("{nbt}");
 }
