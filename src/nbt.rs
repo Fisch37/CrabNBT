@@ -1,6 +1,5 @@
 use crate::error::Error;
-use crate::impl_FromStr_through_FromVisitor;
-use crate::nbt::de_utils::{FromVisitor, StrVisitor, consume_whitespace, expect_char, read_string};
+use crate::nbt::snbt::de::utils::{FromVisitor, impl_FromStr_through_FromVisitor, StrVisitor, consume_whitespace, expect_char, read_string};
 use crate::nbt::error::SnbtDeserialisationError;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use crab_nbt::nbt::compound::NbtCompound;
@@ -11,8 +10,8 @@ use std::io::{Cursor, Write};
 use std::ops::Deref;
 
 pub mod compound;
-pub(crate) mod de_utils;
 pub mod error;
+pub(crate) mod snbt;
 pub mod tag;
 pub mod utils;
 

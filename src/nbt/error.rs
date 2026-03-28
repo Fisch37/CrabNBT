@@ -1,6 +1,6 @@
 use std::{error::Error, fmt::Display};
 
-use crate::nbt::de_utils::StrVisitor;
+use crate::nbt::snbt::de::utils::StrVisitor;
 
 #[derive(Debug)]
 pub struct SnbtDeserialisationError {

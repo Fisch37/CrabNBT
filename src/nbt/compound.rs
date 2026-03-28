@@ -1,5 +1,4 @@
-use crate::impl_FromStr_through_FromVisitor;
-use crate::nbt::de_utils::{FromVisitor, StrVisitor, consume_whitespace, expect_char, read_string};
+use crate::nbt::snbt::de::utils::{impl_FromStr_through_FromVisitor, FromVisitor, StrVisitor, consume_whitespace, expect_char, read_string};
 use crate::nbt::error::SnbtDeserialisationError;
 use crate::nbt::utils::{escape_name, join_formatted};
 use crate::{error::Error, Nbt};

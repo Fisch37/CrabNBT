@@ -8,8 +8,7 @@ use std::io::Cursor;
 use std::mem::{Discriminant, discriminant};
 use std::str::FromStr;
 
-use crate::impl_FromStr_through_FromVisitor;
-use crate::nbt::de_utils::{FromVisitor, StrVisitor, char_may_be_unquoted, consume_whitespace, expect_char, read_slice_while, read_string};
+use crate::nbt::snbt::de::utils::{impl_FromStr_through_FromVisitor, FromVisitor, StrVisitor, char_may_be_unquoted, consume_whitespace, expect_char, read_slice_while, read_string};
 use crate::nbt::error::SnbtDeserialisationError;
 
 /// Enum representing the different types of NBT tags.
@@ -576,7 +575,7 @@ fn number_from_string<Number, M, T>(s: &str, mapper: M) -> Result<T, SnbtDeseria
 
 #[cfg(test)]
 mod tests {
-    use crate::{NbtTag, nbt::{de_utils::StrVisitor, tag::read_number}};
+    use crate::{NbtTag, nbt::{snbt::de::utils::StrVisitor, tag::read_number}};
 
     fn number_helper(s: &str) -> NbtTag {
         read_number(&mut StrVisitor::new(s)).unwrap()

@@ -12,7 +12,6 @@ pub trait FromVisitor: Sized {
     fn from_visitor(visitor: &mut StrVisitor) -> std::result::Result<Self, Self::Err>;
 }
 
-#[macro_export]
 /// Provides an implementation of [`std::str::FromStr`] for types that implement [`FromVisitor`].
 /// It calls [`FromVisitor::from_visitor`] and if, after the method returns,
 /// the visitor is not exhausted, returns an [`Err`] variant (otherwise, returns the result)
@@ -34,8 +33,9 @@ macro_rules! impl_FromStr_through_FromVisitor {
         }
     };
 }
+pub(crate) use impl_FromStr_through_FromVisitor;
 
-/// A more flexible replacement for `std::str::Chars`.
+/// A more flexible replacement for [`std::str::Chars`].
 /// Allows character-by-character iteration over a string,
 /// but with built-in support for peeking and teeing (via clone())
 #[must_use]
@@ -302,7 +302,7 @@ fn parse_escape_sequence(visitor: &mut StrVisitor) -> Result<char> {
 
 #[cfg(test)]
 mod tests {
-    use crate::nbt::de_utils::{parse_escape_sequence, StrVisitor};
+    use crate::nbt::snbt::de::utils::{parse_escape_sequence, StrVisitor};
 
     #[test]
     fn escape_sequences() {
