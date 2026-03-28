@@ -3,7 +3,8 @@ use crab_nbt::error::Error;
 use crab_nbt::nbt::compound::NbtCompound;
 use crab_nbt::nbt::utils::*;
 use derive_more::From;
-use std::fmt::{self, Display, Formatter};
+use std::convert::identity;
+use std::fmt::{self, Debug, Display, Formatter};
 use std::io::Cursor;
 use std::mem::{Discriminant, discriminant};
 use std::str::FromStr;
@@ -336,7 +337,7 @@ impl FromVisitor for NbtTag {
                     read_list(visitor).map(NbtTag::List)
                 }
             },
-            c if is_number_character(c) => read_number_decimal(visitor),
+            c if is_number_character(c) => read_number(visitor),
             _ => {
                 if match_expect_constant(visitor, "true") {
                     Ok(TRUE)
@@ -380,13 +381,6 @@ fn write_listlike<T: Display, I: IntoIterator<Item = T>>(
     write!(f, "]")
 }
 
-/// Returns true if `c` is a character that may appear in a number.
-/// This also includes decimals and includes characters
-/// that may only appear at the start of a number (such as `-`).
-fn is_number_character(c: char) -> bool {
-    c.is_ascii_digit() || c == '.' || c == '-'
-}
-
 fn match_expect_constant(visitor: &mut StrVisitor, name: &str) -> bool {
     let mut visitor_clone = visitor.clone();
     let mut name_length = 0usize;
@@ -417,7 +411,9 @@ fn uuid_from_str(s: &str) -> Result<Vec<i32>, SnbtDeserialisationError> {
         for res in uuid_it {
             match res {
                 Ok(part) => uuid_parts.push(part),
-                Err(_) => todo!("Better error structures")
+                e => {
+                    e.expect("todo: better error structures");
+                }
             }
         }
     }
@@ -514,11 +510,12 @@ fn read_snbt_array<Number>(
 
 fn read_number(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationError> {
     let mut chars = visitor.as_str().chars();
-    if chars.next().map(|c| c == '0').unwrap_or(false) {
+    if chars.next().is_some_and(|c| c == '0') {
         match chars.next() {
             Some('x' | 'X') => read_number_radix(visitor, 16),
             Some('b' | 'B')
-                if chars.next().map_or(false, |c| c == '0' || c == '1')
+                // "0b" looks like the prefix to a binary number but is actually a 0 byte.
+                if chars.next().is_some_and(|c| c == '0' || c == '1')
                 => read_number_radix(visitor, 2),
             _ => read_number_decimal(visitor)
         }
@@ -528,28 +525,64 @@ fn read_number(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationEr
 }
 
 fn read_number_decimal(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationError> {
-    let mut read_decimal_point = false;
+    let mut read_float_only_char = false;
     let number_str = read_slice_while(visitor, |c| {
         // [0-9]|-|.|e|E
-        if c == '.' {
-            read_decimal_point = true;
+        if c == '.' || c == 'e' || c == 'E' {
+            read_float_only_char = true;
         }
         c.is_ascii_digit() || c == '-' || c == '.' || c == 'e' || c == 'E'
     });
     
     match visitor.next() {
         Some('b' | 'B') => number_from_string(number_str, NbtTag::Byte),
-        Some('s' | 'S') => number_from_string(number_str, NbtTag::Short),
+        Some('s' | 'S') => {
+            if visitor.peek().is_some_and(is_number_type_affix) {
+                // Signedness suffix, not short!
+                if read_float_only_char {
+                    return Err(SnbtDeserialisationError::from_visitor(
+                        visitor, "an unsigned integer number"
+                    ));
+                }
+                integer_from_string(
+                    number_str,
+                    // todo: remove unwrap
+                    Some(visitor.next().unwrap()),
+                    identity,
+                    identity,
+                    identity,
+                    identity
+                )
+            } else {
+                number_from_string(number_str, NbtTag::Short)
+            }
+        },
         Some('i' | 'I') => number_from_string(number_str, NbtTag::Int),
         Some('l' | 'L') => number_from_string(number_str, NbtTag::Long),
         Some('f' | 'F') => number_from_string(number_str, NbtTag::Float),
         Some('d' | 'D') => number_from_string(number_str, NbtTag::Double),
-        Some('u' | 'U') => todo!("Unsigned suffix"),
-        _ => {
-            // no number type identifier, no character should have been read
-            // (it's easier and faster to undo here than to use next_if)
-            visitor.previous();
-            if read_decimal_point {
+        Some('u' | 'U') => {
+            if read_float_only_char {
+                return Err(SnbtDeserialisationError::from_visitor(
+                    visitor, "an unsigned integer number"
+                ));
+            }
+            integer_from_string(
+                number_str,
+                visitor.next(),
+                |b: u8| b.cast_signed(),
+                |s: u16| s.cast_signed(),
+                |i: u32| i.cast_signed(),
+                |l: u64| l.cast_signed()
+            )
+        },
+        x => {
+            if x.is_some() {
+                // no number type identifier, no character should have been consumed
+                // (it's easier and faster to undo here than to use next_if)
+                visitor.previous();
+            }
+            if read_float_only_char {
                 number_from_string(number_str, NbtTag::Double)
             } else {
                 number_from_string(number_str, NbtTag::Int)
@@ -562,7 +595,31 @@ fn read_number_radix(
     visitor: &mut StrVisitor,
     radix: u32
 ) -> Result<NbtTag, SnbtDeserialisationError> {
-    todo!("Radix numbers")
+    let num_str = read_slice_while(visitor, |c| c.is_digit(radix));
+    
+    todo!()
+}
+
+fn integer_from_string<N1, N2, N3, N4>(
+    s: &str,
+    suffix: Option<char>,
+    byte_fn: fn(N1) -> i8,
+    short_fn: fn(N2) -> i16,
+    int_fn: fn(N3) -> i32,
+    long_fn: fn(N4) -> i64
+) -> Result<NbtTag, SnbtDeserialisationError>
+    where N1: FromStr, N1::Err: Debug,
+        N2: FromStr, N2::Err: Debug,
+        N3: FromStr, N3::Err: Debug,
+        N4: FromStr, N4::Err: Debug
+{
+    match suffix.map(|c| c.to_ascii_lowercase()) {
+        Some('b') => number_from_string(s, |r| NbtTag::Byte(byte_fn(r))),
+        Some('s') => number_from_string(s, |r| NbtTag::Short(short_fn(r))),
+        Some('i') | None => number_from_string(s, |r| NbtTag::Int(int_fn(r))),
+        Some('l') => number_from_string(s, |r| NbtTag::Long(long_fn(r))),
+        Some(x) => todo!("better error structures. Expected one of b|s|i|l for integer_from_str, got {x}")
+    }
 }
 
 fn number_from_string<Number, M, T>(s: &str, mapper: M) -> Result<T, SnbtDeserialisationError>
@@ -571,6 +628,18 @@ fn number_from_string<Number, M, T>(s: &str, mapper: M) -> Result<T, SnbtDeseria
         Number::Err: std::fmt::Debug
 {
     s.parse().map_err(|e| todo!("better error structures {e:?}")).map(mapper)
+}
+
+/// Returns true if `c` is a character that may appear in a number.
+/// This also includes decimals and includes characters
+/// that may only appear at the start of a number (such as `-`).
+fn is_number_character(c: char) -> bool {
+    c.is_ascii_digit() || c == '.' || c == '-'
+}
+
+fn is_number_type_affix(c: char) -> bool {
+    let c = c.to_ascii_lowercase();
+    c == 'b' || c == 's' || c == 'l' || c == 'i'
 }
 
 #[cfg(test)]

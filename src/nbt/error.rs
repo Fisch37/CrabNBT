@@ -2,7 +2,7 @@ use std::{error::Error, fmt::Display};
 
 use crate::nbt::snbt::de::utils::StrVisitor;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct SnbtDeserialisationError {
     pub index: usize,
     pub offending_area: String,

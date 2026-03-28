@@ -2,6 +2,12 @@ use std::str::FromStr as _;
 
 use crab_nbt::{NbtCompound, NbtTag, nbt};
 
+macro_rules! assert_parse {
+    ($input:expr, $expected:expr) => {
+        assert_eq!($input.parse(), Ok($expected))
+    };
+}
+
 fn tag_helper(s: &str) -> NbtTag {
     NbtTag::from_str(s).unwrap()
 }
@@ -53,8 +59,24 @@ fn nbt_compound() {
 }
 
 #[test]
+fn nbt_numbers() {
+    assert_parse!("1e7f", NbtTag::Float(1e7));
+    assert_parse!("1e7", NbtTag::Double(1e7));
+    assert_parse!("10", NbtTag::Int(10));
+    assert_parse!("-25", NbtTag::Int(-25));
+    assert_parse!("5b", NbtTag::Byte(5));
+    assert_parse!("-128b", NbtTag::Byte(-128));
+    assert_parse!("127b", NbtTag::Byte(127));
+    assert_parse!("50l", NbtTag::Long(50));
+    assert_parse!("50L", NbtTag::Long(50));
+
+    assert_parse!("255UB", NbtTag::Byte(-1));
+    assert_parse!("10SB", NbtTag::Byte(10));
+}
+
+#[test]
 fn big_data_parser() {
     let input = include_str!("data/bigdata.snbt");
     let nbt = NbtCompound::from_str(input).unwrap();
-    println!("{nbt}");
+    assert_eq!(nbt.to_string(), input);
 }
