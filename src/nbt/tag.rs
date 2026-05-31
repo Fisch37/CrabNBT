@@ -3,13 +3,13 @@ use crab_nbt::error::Error;
 use crab_nbt::nbt::compound::NbtCompound;
 use crab_nbt::nbt::utils::*;
 use derive_more::From;
-use std::convert::identity;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::io::Cursor;
 use std::mem::{Discriminant, discriminant};
 use std::str::FromStr;
 
-use crate::nbt::snbt::de::utils::{impl_FromStr_through_FromVisitor, FromVisitor, StrVisitor, char_may_be_unquoted, consume_whitespace, expect_char, read_slice_while, read_string};
+use crate::nbt::snbt::de::numbers::{may_start_number, read_number_or_numboid_const};
+use crate::nbt::snbt::de::utils::{FromVisitor, StrVisitor, consume_whitespace, expect_char, expect_str, impl_FromStr_through_FromVisitor, read_slice_while, read_string};
 use crate::nbt::error::SnbtDeserialisationError;
 
 /// Enum representing the different types of NBT tags.
@@ -261,6 +261,25 @@ impl NbtTag {
             _ => None,
         }
     }
+
+    pub(crate) fn is_truthy(&self) -> bool {
+        use self::NbtTag::*;
+        match self {
+            End => false,
+            &Byte(x) => x != 0,
+            &Short(x) => x != 0,
+            &Int(x) => x != 0,
+            &Long(x) => x != 0,
+            &Float(x) => x != 0.0,
+            &Double(x) => x != 0.0,
+            ByteArray(x) => !x.is_empty(),
+            IntArray(x) => !x.is_empty(),
+            LongArray(x) => !x.is_empty(),
+            String(x) => !x.is_empty(),
+            List(x) => !x.is_empty(),
+            Compound(x) => !x.child_tags.is_empty()
+        }
+    }
 }
 
 impl From<&str> for NbtTag {
@@ -327,7 +346,7 @@ impl FromVisitor for NbtTag {
                             |arr| NbtTag::ByteArray(arr.into_iter().map(|b| b as u8).collect())
                         ),
                         'L' => read_snbt_array::<i64>(visitor).map(NbtTag::LongArray),
-                        c => return Err(SnbtDeserialisationError::from_visitor(
+                        _ => return Err(SnbtDeserialisationError::from_visitor(
                             visitor,
                             "an array type identifier"
                         ))
@@ -337,18 +356,25 @@ impl FromVisitor for NbtTag {
                     read_list(visitor).map(NbtTag::List)
                 }
             },
-            c if is_number_character(c) => read_number(visitor),
+            c if may_start_number(c) => read_number_or_numboid_const(visitor),
             _ => {
-                if match_expect_constant(visitor, "true") {
+                if expect_str(visitor, "true").is_ok() {
                     Ok(TRUE)
-                } else if match_expect_constant(visitor, "false") {
+                } else if expect_str(visitor, "false").is_ok() {
                     Ok(FALSE)
-                } else if match_expect_constant(visitor, "bool(") {
+                } else if expect_str(visitor, "bool(").is_ok() {
                     consume_whitespace(visitor);
-                    todo!("Read number or read true/false");
+                    
+                    let tag = if visitor.peek().is_some() {
+                        read_number_or_numboid_const(visitor)?.is_truthy().into()
+                    } else {
+                        return Err(SnbtDeserialisationError::from_visitor(visitor, "EOF"))
+                    };
+                    // todo!("Read number or read true/false");
                     consume_whitespace(visitor);
                     expect_char(visitor, ')', ")")?;
-                } else if match_expect_constant(visitor, "uuid(") {
+                    Ok(tag)
+                } else if expect_str(visitor, "uuid(").is_ok() {
                     consume_whitespace(visitor);
                     let tag = uuid_from_str(&read_string(visitor)?)
                         .map(NbtTag::IntArray);
@@ -381,56 +407,42 @@ fn write_listlike<T: Display, I: IntoIterator<Item = T>>(
     write!(f, "]")
 }
 
-fn match_expect_constant(visitor: &mut StrVisitor, name: &str) -> bool {
-    let mut visitor_clone = visitor.clone();
-    let mut name_length = 0usize;
-    for match_char in name.chars() {
-        let c = match visitor_clone.next() {
-            None => return false,
-            Some(x) => x
-        };
-        if c != match_char {
-            return false;
-        }
-        name_length += 1;
-    }
-    let matches = visitor.peek().filter(|c| char_may_be_unquoted(*c)).is_none();
-    if matches {
-        for _ in 0..name_length {
-            visitor.next();
-        }
-    }
-    matches
-}
-
 fn uuid_from_str(s: &str) -> Result<Vec<i32>, SnbtDeserialisationError> {
-    let mut uuid_parts: Vec<i64> = Vec::with_capacity(4); // UUIDv4 has 4 parts
+    const UUID_V4_SIZE: usize = 16;
+    type Out = i32;
+
+    let mut bytes = [0u8; UUID_V4_SIZE];
+    for (i, res) in s.split('-')
+        .flat_map(|substr| {
+            (0..(substr.len() / 2))
+                .map(|i| &substr[2*i..(2*(i+1)).min(substr.len())])
+        })
+        .map(|s| u8::from_str_radix(s, 16))
+        .enumerate()
     {
-        let uuid_it = s.split('-')
-                .map(|part| i64::from_str_radix(part, 16));
-        for res in uuid_it {
-            match res {
-                Ok(part) => uuid_parts.push(part),
-                e => {
-                    e.expect("todo: better error structures");
-                }
-            }
+        if i >= bytes.len() {
+            todo!("better error structures");
         }
+        bytes[i] = res.expect("todo: better error structures");
     }
-    if uuid_parts.len() != 5 {
-        todo!("Better error structures")
-    } else {
-        // c2-70-a8-46  
-        //              c9-30  4c-9f
-        //                            87-f3  ba-06-
-        //                                         7e-3f-7c-72
-        Ok(vec![
-            uuid_parts[0] as i32,
-            ((uuid_parts[1] << i16::BITS) + uuid_parts[2]) as i32,
-            ((uuid_parts[3] << i16::BITS) + (uuid_parts[4] >> i32::BITS)) as i32,
-            uuid_parts[5] as i32
-        ])
-    }
+    // Transmuting here is preferable over producing the slices manually
+    // (e.g. bytes[0..4], bytes[4..8] etc.), because as of Rust 2024,
+    // RangeIndexing an array gives a slice, whose size is unknown at compile time.
+    // i32::from_be_bytes requires moving an array into it to work,
+    // so we would either have to copy the array or use a different method (of which I am not aware)
+    // 
+    // SAFETY:
+    //  Arrays are purely groups of data whose size is determined at compile time.
+    //  More specifically, an array [T;N]'s size is determined by size_of::<T>()*N
+    //      and an element arr[i] is offset by i*size_of::<T>() bytes.
+    //  This means that [[T;N];M] has the same layout as a [T;N*M] with respect to its values.
+    //  Ergo, transmuting here is safe, because we don't change the bounds of any elements.
+    let parts: [[u8; size_of::<Out>()]; UUID_V4_SIZE/size_of::<Out>()] = unsafe { std::mem::transmute(bytes) };
+    Ok(
+        parts.into_iter()
+            .map(|int_bytes| Out::from_be_bytes(int_bytes))
+            .collect()
+    )
 }
 
 
@@ -508,146 +520,12 @@ fn read_snbt_array<Number>(
     Ok(content)
 }
 
-fn read_number(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationError> {
-    let mut chars = visitor.as_str().chars();
-    if chars.next().is_some_and(|c| c == '0') {
-        match chars.next() {
-            Some('x' | 'X') => read_number_radix(visitor, 16),
-            Some('b' | 'B')
-                // "0b" looks like the prefix to a binary number but is actually a 0 byte.
-                if chars.next().is_some_and(|c| c == '0' || c == '1')
-                => read_number_radix(visitor, 2),
-            _ => read_number_decimal(visitor)
-        }
-    } else {
-        read_number_decimal(visitor)
-    }
-}
-
-fn read_number_decimal(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationError> {
-    let mut read_float_only_char = false;
-    let number_str = read_slice_while(visitor, |c| {
-        // [0-9]|-|.|e|E
-        if c == '.' || c == 'e' || c == 'E' {
-            read_float_only_char = true;
-        }
-        c.is_ascii_digit() || c == '-' || c == '.' || c == 'e' || c == 'E'
-    });
-    
-    match visitor.next() {
-        Some('b' | 'B') => number_from_string(number_str, NbtTag::Byte),
-        Some('s' | 'S') => {
-            if visitor.peek().is_some_and(is_number_type_affix) {
-                // Signedness suffix, not short!
-                if read_float_only_char {
-                    return Err(SnbtDeserialisationError::from_visitor(
-                        visitor, "an unsigned integer number"
-                    ));
-                }
-                integer_from_string(
-                    number_str,
-                    // todo: remove unwrap
-                    Some(visitor.next().unwrap()),
-                    identity,
-                    identity,
-                    identity,
-                    identity
-                )
-            } else {
-                number_from_string(number_str, NbtTag::Short)
-            }
-        },
-        Some('i' | 'I') => number_from_string(number_str, NbtTag::Int),
-        Some('l' | 'L') => number_from_string(number_str, NbtTag::Long),
-        Some('f' | 'F') => number_from_string(number_str, NbtTag::Float),
-        Some('d' | 'D') => number_from_string(number_str, NbtTag::Double),
-        Some('u' | 'U') => {
-            if read_float_only_char {
-                return Err(SnbtDeserialisationError::from_visitor(
-                    visitor, "an unsigned integer number"
-                ));
-            }
-            integer_from_string(
-                number_str,
-                visitor.next(),
-                |b: u8| b.cast_signed(),
-                |s: u16| s.cast_signed(),
-                |i: u32| i.cast_signed(),
-                |l: u64| l.cast_signed()
-            )
-        },
-        x => {
-            if x.is_some() {
-                // no number type identifier, no character should have been consumed
-                // (it's easier and faster to undo here than to use next_if)
-                visitor.previous();
-            }
-            if read_float_only_char {
-                number_from_string(number_str, NbtTag::Double)
-            } else {
-                number_from_string(number_str, NbtTag::Int)
-            }
-        }
-    }
-}
-
-fn read_number_radix(
-    visitor: &mut StrVisitor,
-    radix: u32
-) -> Result<NbtTag, SnbtDeserialisationError> {
-    let num_str = read_slice_while(visitor, |c| c.is_digit(radix));
-    
-    todo!()
-}
-
-fn integer_from_string<N1, N2, N3, N4>(
-    s: &str,
-    suffix: Option<char>,
-    byte_fn: fn(N1) -> i8,
-    short_fn: fn(N2) -> i16,
-    int_fn: fn(N3) -> i32,
-    long_fn: fn(N4) -> i64
-) -> Result<NbtTag, SnbtDeserialisationError>
-    where N1: FromStr, N1::Err: Debug,
-        N2: FromStr, N2::Err: Debug,
-        N3: FromStr, N3::Err: Debug,
-        N4: FromStr, N4::Err: Debug
-{
-    match suffix.map(|c| c.to_ascii_lowercase()) {
-        Some('b') => number_from_string(s, |r| NbtTag::Byte(byte_fn(r))),
-        Some('s') => number_from_string(s, |r| NbtTag::Short(short_fn(r))),
-        Some('i') | None => number_from_string(s, |r| NbtTag::Int(int_fn(r))),
-        Some('l') => number_from_string(s, |r| NbtTag::Long(long_fn(r))),
-        Some(x) => todo!("better error structures. Expected one of b|s|i|l for integer_from_str, got {x}")
-    }
-}
-
-fn number_from_string<Number, M, T>(s: &str, mapper: M) -> Result<T, SnbtDeserialisationError>
-    where Number: FromStr, M: FnOnce(Number) -> T,
-        // TODO: Remove me after better error structures
-        Number::Err: std::fmt::Debug
-{
-    s.parse().map_err(|e| todo!("better error structures {e:?}")).map(mapper)
-}
-
-/// Returns true if `c` is a character that may appear in a number.
-/// This also includes decimals and includes characters
-/// that may only appear at the start of a number (such as `-`).
-fn is_number_character(c: char) -> bool {
-    c.is_ascii_digit() || c == '.' || c == '-'
-}
-
-fn is_number_type_affix(c: char) -> bool {
-    let c = c.to_ascii_lowercase();
-    c == 'b' || c == 's' || c == 'l' || c == 'i'
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::{NbtTag, nbt::{snbt::de::utils::StrVisitor, tag::read_number}};
+    use crate::{NbtTag, nbt::{snbt::de::utils::StrVisitor, tag::read_number_or_numboid_const}};
 
     fn number_helper(s: &str) -> NbtTag {
-        read_number(&mut StrVisitor::new(s)).unwrap()
+        read_number_or_numboid_const(&mut StrVisitor::new(s)).unwrap()
     }
 
     #[test]
