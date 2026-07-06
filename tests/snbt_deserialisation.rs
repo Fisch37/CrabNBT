@@ -88,6 +88,8 @@ fn nbt_numbers() {
     const FALSE: NbtTag = NbtTag::Byte(0);
     assert_parse!("bool(500)", TRUE);
     assert_parse!("bool(0)", FALSE);
+    assert_parse!("bool(-0.9999999F)", FALSE);
+    assert_parse!("bool(-0.9999999D)", FALSE);
     assert_parse!("bool(true)", TRUE);
     assert_parse!("bool(false)", FALSE);
 }
