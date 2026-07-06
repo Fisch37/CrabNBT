@@ -1,3 +1,4 @@
+use std::assert_matches;
 use std::str::FromStr as _;
 
 use crab_nbt::{NbtCompound, NbtTag, nbt};
@@ -89,6 +90,20 @@ fn nbt_numbers() {
     assert_parse!("bool(0)", FALSE);
     assert_parse!("bool(true)", TRUE);
     assert_parse!("bool(false)", FALSE);
+}
+
+#[test]
+fn nbt_fails() {
+    assert_matches!(r#"{"": {}}"#.parse::<NbtTag>(), Err(_));
+
+    assert_matches!("1a".parse::<NbtTag>(), Err(_));
+    // assert_matches!("0x".parse::<NbtTag>(), Err(_));
+    assert_matches!("_1E1".parse::<NbtTag>(), Err(_));
+    assert_matches!("1_E1".parse::<NbtTag>(), Err(_));
+    assert_matches!("1E_1".parse::<NbtTag>(), Err(_));
+    assert_matches!("1E1_".parse::<NbtTag>(), Err(_));
+    // assert_matches!("1E.1".parse::<NbtTag>(), Err(_));
+    // assert_matches!("1E1.".parse::<NbtTag>(), Err(_));
 }
 
 #[test]
