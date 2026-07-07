@@ -421,9 +421,9 @@ fn uuid_from_str(s: &str) -> Result<Vec<i32>, SnbtDeserialisationError> {
         .enumerate()
     {
         if i >= bytes.len() {
-            todo!("better error structures");
+            return Err(SnbtDeserialisationError::UuidTooManyBytes);
         }
-        bytes[i] = res.expect("todo: better error structures");
+        bytes[i] = res.map_err(SnbtDeserialisationError::ParseIntError)?;
     }
     // Transmuting here is preferable over producing the slices manually
     // (e.g. bytes[0..4], bytes[4..8] etc.), because as of Rust 2024,

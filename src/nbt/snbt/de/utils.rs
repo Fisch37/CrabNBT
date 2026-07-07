@@ -1,4 +1,5 @@
 use std::{borrow::Cow, fmt::Debug, iter::FusedIterator, result::Result as StdResult};
+use std::num::ParseIntError;
 
 use crate::nbt::error::SnbtDeserialisationError;
 
@@ -22,13 +23,10 @@ macro_rules! impl_FromStr_through_FromVisitor {
 
             fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
                 let mut visitor = StrVisitor::new(s);
-                Self::from_visitor(&mut visitor)
-                    .and_then(|res| {
-                        match visitor.peek() {
-                            None => Ok(res),
-                            Some(_) => Err(SnbtDeserialisationError::from_visitor(&visitor, "EOF"))
-                        }
-                    })
+                Self::from_visitor(&mut visitor).and_then(|res| match visitor.peek() {
+                    None => Ok(res),
+                    Some(_) => Err(SnbtDeserialisationError::from_visitor(&visitor, "EOF")),
+                })
             }
         }
     };
@@ -413,17 +411,17 @@ fn parse_escape_sequence(visitor: &mut StrVisitor) -> Result<char> {
         's' => ' ',
         't' => '\t',
         'x' => {
-            parse_hexadecimal_as_char(visitor, u8::from_str_radix, 2)?
+            parse_hexadecimal_as_char::<_, _, std::convert::Infallible, _>(visitor, u8::from_str_radix, 2)?
         }
         'u' => {
-            parse_hexadecimal_as_char(
+            parse_hexadecimal_as_char::<_, _, std::convert::Infallible, _>(
                 visitor,
                 |s, r| u16::from_str_radix(s, r).map(|i| i as u32),
                 4
             )?
         }
         'U' => {
-            parse_hexadecimal_as_char(visitor, u32::from_str_radix, 8)?
+            parse_hexadecimal_as_char::<_, _, std::convert::Infallible, _>(visitor, u32::from_str_radix, 8)?
         }
         'N' => {
             expect_char(visitor, '{', "{")?;
@@ -444,9 +442,10 @@ fn parse_hexadecimal_as_char<N: TryInto<char, Error = E2>, E2, E, M>(
     parser: M,
     num_expected: usize
 ) -> Result<char>
-    where M: FnOnce(&str, u32) -> StdResult<N, E>,
-        // TODO: Remove this once better error structures is done
-        E: Debug, E2: Debug
+where
+    M: FnOnce(&str, u32) -> StdResult<N, ParseIntError>,
+    // TODO: Remove this once better error structures is done
+    E2: Debug,
 {
     let (hex, chars) = visitor.next_n(num_expected);
     if chars != num_expected {
@@ -456,12 +455,10 @@ fn parse_hexadecimal_as_char<N: TryInto<char, Error = E2>, E2, E, M>(
             "C hexadecimal characters"
         ))
     } else {
-        Ok(
-            parser(hex, 16)
-                .expect("todo: better error structures")
-                .try_into()
-                .expect("todo: better error structures")
-        )
+        Ok(parser(hex, 16)
+            .map_err(SnbtDeserialisationError::ParseIntError)?
+            .try_into()
+            .expect("todo: better error structures"))
     }
 }
 

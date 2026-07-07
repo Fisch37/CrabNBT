@@ -13,7 +13,8 @@ pub enum SnbtDeserialisationError {
     ParseFloatError(ParseFloatError),
     #[error(transparent)]
     ParseIntError(ParseIntError),
-
+    #[error("Too many bytes for UUID")]
+    UuidTooManyBytes,
     #[error("Expected {expected} at position {index}: {offending_area} <--[HERE]")]
     Unexpected {
         index: usize,
