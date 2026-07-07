@@ -179,11 +179,15 @@ pub fn read_number_or_numboid_const(
     } else if expect_str(visitor, "false").is_ok() {
         Ok(NbtTag::Byte(0))
     } else {
-        read_number(visitor)
+        read_number(visitor, None, None)
     }
 }
 
-fn read_number(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationError> {
+pub fn read_number(
+    visitor: &mut StrVisitor,
+    default_integer_type: Option<NumberType>,
+    default_float_type: Option<NumberType>,
+) -> Result<NbtTag, SnbtDeserialisationError> {
     // TODO: Check _ implementation. May be underconstrained
     //  (no check for end/beginning of sequence, which may cause bugs)
     let mut is_float_only: bool = false;
@@ -272,9 +276,9 @@ fn read_number(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationEr
             }
             if is_float_only {
                 // Unmarked floating-point value defaults to double
-                (Signedness::Unspecified, NumberType::Double)
+                (Signedness::Unspecified, default_float_type.unwrap_or(NumberType::Double))
             } else {
-                (Signedness::Unspecified, NumberType::Integer)
+                (Signedness::Unspecified, default_integer_type.unwrap_or(NumberType::Integer))
             }
         }
     };

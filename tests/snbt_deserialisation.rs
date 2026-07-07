@@ -107,6 +107,16 @@ fn nbt_numbers() {
 }
 
 #[test]
+fn nbt_arrays() {
+    assert_parse!("[I;]", NbtTag::IntArray(Vec::new()));
+    assert_parse!("[I; 0, 1B, 2S, 3I]", NbtTag::IntArray(vec![0, 1, 2, 3]));
+    assert_parse!(
+        "[B; 0, 0b1b, 2, 0x3]",
+        NbtTag::ByteArray(vec![0, 1, 2, 3].into())
+    );
+}
+
+#[test]
 fn nbt_fails() {
     assert_matches!(r#"{"": {}}"#.parse::<NbtTag>(), Err(_));
 
