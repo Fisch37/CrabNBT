@@ -427,8 +427,9 @@ fn parse_escape_sequence(visitor: &mut StrVisitor) -> Result<char> {
         }
         'N' => {
             expect_char(visitor, '{', "{")?;
-            todo!("\\N");
+            let c = parse_unicode_name(visitor)?;
             expect_char(visitor, '}', "}")?;
+            c
         }
         _ => {
             return Err(SnbtDeserialisationError::from_visitor(
@@ -462,6 +463,26 @@ fn parse_hexadecimal_as_char<N: TryInto<char, Error = E2>, E2, E, M>(
                 .try_into()
                 .expect("todo: better error structures")
         )
+    }
+}
+
+fn parse_unicode_name(visitor: &mut StrVisitor) -> Result<char> {
+    let name = read_slice_while(
+        visitor,
+        |c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | ' '),
+    );
+
+    if visitor.peek().is_none_or(|c| c != '}') {
+        Err(SnbtDeserialisationError::from_visitor(
+            visitor,
+            // TODO: This error message could use improvement
+            "expected '}' while reading Unicode name from \\N escape code",
+        ))
+    } else {
+        unicode_names2::character(name).ok_or(SnbtDeserialisationError::from_visitor(
+            visitor,
+            "symbol matching this name was not found",
+        ))
     }
 }
 

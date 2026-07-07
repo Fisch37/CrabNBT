@@ -1,3 +1,4 @@
+use std::assert_matches;
 use std::str::FromStr as _;
 
 use crab_nbt::{NbtCompound, NbtTag, nbt};
@@ -96,4 +97,18 @@ fn big_data_parser() {
     let input = include_str!("data/bigdata.snbt");
     let nbt = NbtCompound::from_str(input).unwrap();
     // assert_eq!(nbt.to_string(), input);
+}
+
+#[test]
+fn nbt_strings() {
+    assert_parse!(r#""\N{Snowman}""#, NbtTag::String("\u{2603}".to_owned()));
+    assert_parse!(r#""\N{sNoWmAn}""#, NbtTag::String("\u{2603}".to_owned()));
+    assert_parse!(r#""\N{Low Line}""#, NbtTag::String("_".to_owned()));
+    assert_parse!(
+        r#""\N{MODIFIER LETTER SMALL TURNED R WITH LONG LEG AND RETROFLEX HOOK}""#,
+        NbtTag::String("\u{107A7}".to_owned())
+    );
+
+    // Minecraft does not follow UAX44-LM2 (loose matching)
+    assert_matches!(NbtTag::from_str(r#""\N{Low-Line}""#), Err(_));
 }
