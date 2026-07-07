@@ -2,7 +2,7 @@
 //!
 //! -?((0b(0|1)+|0x[0-9a-fA-F]+)|0(b|s|i|l|f|d|B|S|I|L|F|D)?|[1-9][0-9]*(b|s|i|l|f|d|B|S|I|L|F|D)?|[1-9][0-9]*.[0-9]*(f|d|F|D)?)
 
-use std::{fmt::Debug, str::FromStr};
+use std::{borrow::Cow, fmt::Debug, str::FromStr};
 
 use crate::nbt::{
     error::SnbtDeserialisationError,
@@ -43,6 +43,14 @@ impl Radix {
         match self {
             Self::Binary => c == '0' || c == '1',
             Self::Decimal => c.is_ascii_digit() || c == '.' || c == '-' || c == 'e' || c == 'E',
+            Self::Hexadecimal => c.is_ascii_hexdigit(),
+        }
+    }
+
+    pub const fn check_digit(self, c: char) -> bool {
+        match self {
+            Self::Binary => c == '0' || c == '1',
+            Self::Decimal => c.is_ascii_digit(),
             Self::Hexadecimal => c.is_ascii_hexdigit(),
         }
     }
@@ -218,9 +226,10 @@ fn read_number(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationEr
                 visitor.next().unwrap();
                 continue;
             }
-            '_' => {
+            '_' if visitor.previous().is_some_and(|c| radix.check_digit(c)) => {
                 visitor.next().unwrap();
-                if visitor.peek().is_some_and(|c| c.is_ascii_digit()) {
+                visitor.next().unwrap();
+                if visitor.peek().is_some_and(|c| radix.check_digit(c)) {
                     num_end += 1;
                     continue;
                 } else {
@@ -239,10 +248,11 @@ fn read_number(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationEr
         }
     }
     let num_str = &slice[..num_end];
-    // match &num_str {
-    //     Cow::Borrowed(b) => println!("Borrowed({b})"),
-    //     Cow::Owned(o) => println!("Owned({o})")
-    // }
+    let num_str = if num_str.contains('_') {
+        Cow::Owned(num_str.replace('_', ""))
+    } else {
+        Cow::Borrowed(num_str)
+    };
 
     let (mut signedness, mut number_type) = parse_number_suffix! {
         match visitor.next();
