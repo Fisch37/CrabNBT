@@ -11,8 +11,8 @@ use std::str::FromStr;
 use crate::nbt::error::SnbtDeserialisationError;
 use crate::nbt::snbt::de::numbers::{may_start_number, read_number_or_numboid_const, NumberType};
 use crate::nbt::snbt::de::utils::{
-    consume_whitespace, expect_char, expect_str, impl_FromStr_through_FromVisitor,
-    read_slice_while, read_string, FromVisitor, StrVisitor,
+    consume_whitespace, expect_char, expect_str, expect_str_ignore_case,
+    impl_FromStr_through_FromVisitor, read_slice_while, read_string, FromVisitor, StrVisitor,
 };
 
 /// Enum representing the different types of NBT tags.
@@ -370,9 +370,9 @@ impl FromVisitor for NbtTag {
             }
             c if may_start_number(c) => read_number_or_numboid_const(visitor),
             _ => {
-                if expect_str(visitor, "true").is_ok() {
+                if expect_str_ignore_case(visitor, "true").is_ok() {
                     Ok(TRUE)
-                } else if expect_str(visitor, "false").is_ok() {
+                } else if expect_str_ignore_case(visitor, "false").is_ok() {
                     Ok(FALSE)
                 } else if expect_str(visitor, "bool(").is_ok() {
                     consume_whitespace(visitor);

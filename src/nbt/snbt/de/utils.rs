@@ -201,11 +201,26 @@ pub(crate) fn expect_char(
 /// 
 /// If the visitor does not continue with `expected`,
 /// returns an [`Err`] and the visitor is not advanced at all.
-pub(crate) fn expect_str(
+pub(crate) fn expect_str(visitor: &mut StrVisitor, expected: &'static str) -> Result<()> {
+    if visitor.as_str().starts_with(expected) {
+        visitor.position += expected.len();
+        Ok(())
+    } else {
+        Err(SnbtDeserialisationError::from_visitor(visitor, expected))
+    }
+}
+
+/// Returns [`Ok`] only if the visitor continues with a string matching `expected`, ignoring case.
+/// If [`Ok`] is returned the visitor will be advanced until exactly after that substring.
+///
+/// If the visitor does not continue with `expected`,
+/// returns an [`Err`] and the visitor is not advanced at all.
+pub(crate) fn expect_str_ignore_case(
     visitor: &mut StrVisitor,
     expected: &'static str
 ) -> Result<()> {
-    if visitor.as_str().starts_with(expected) {
+    let s = visitor.as_str();
+    if s.len() >= expected.len() && s[..expected.len()].eq_ignore_ascii_case(expected) {
         visitor.position += expected.len();
         Ok(())
     } else {

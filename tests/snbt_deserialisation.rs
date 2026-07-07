@@ -23,6 +23,8 @@ fn wrap(tag: NbtTag) -> NbtTag {
 #[test]
 fn nbt_tag() {
     assert_eq!(tag_helper("Hello"), NbtTag::String("Hello".to_owned()));
+    assert_parse!(r#""true""#, NbtTag::String("true".to_string()));
+    assert_parse!(r#""false""#, NbtTag::String("false".to_string()));
 }
 
 #[test]
@@ -102,8 +104,8 @@ fn nbt_numbers() {
     assert_parse!("bool(0)", FALSE);
     assert_parse!("bool(-0.9999999F)", FALSE);
     assert_parse!("bool(-0.9999999D)", FALSE);
-    assert_parse!("bool(true)", TRUE);
-    assert_parse!("bool(false)", FALSE);
+    assert_parse!("bool(TRuE)", TRUE);
+    assert_parse!("bool(faLSe)", FALSE);
 }
 
 #[test]

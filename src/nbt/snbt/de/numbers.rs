@@ -6,7 +6,9 @@ use std::{borrow::Cow, fmt::Debug, str::FromStr};
 
 use crate::nbt::{
     error::SnbtDeserialisationError,
-    snbt::de::utils::{expect_str, read_slice_while_skipping, ReaderAction, StrVisitor},
+    snbt::de::utils::{
+        expect_str, expect_str_ignore_case, read_slice_while_skipping, ReaderAction, StrVisitor,
+    },
     NbtTag,
 };
 
@@ -174,9 +176,9 @@ macro_rules! parse_number_suffix {
 pub fn read_number_or_numboid_const(
     visitor: &mut StrVisitor,
 ) -> Result<NbtTag, SnbtDeserialisationError> {
-    if expect_str(visitor, "true").is_ok() {
+    if expect_str_ignore_case(visitor, "true").is_ok() {
         Ok(NbtTag::Byte(1))
-    } else if expect_str(visitor, "false").is_ok() {
+    } else if expect_str_ignore_case(visitor, "false").is_ok() {
         Ok(NbtTag::Byte(0))
     } else {
         read_number(visitor, None, None)
