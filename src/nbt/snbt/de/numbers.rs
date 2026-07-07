@@ -214,9 +214,9 @@ fn read_number(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationEr
                 continue;
             }
             '_' => {
-                if visitor.peek().is_none_or(|c| matches!(c, '0'..='9')) {
+                visitor.next().unwrap();
+                if visitor.peek().is_some_and(|c| c.is_ascii_digit()) {
                     num_end += 1;
-                    visitor.next().unwrap();
                     continue;
                 } else {
                     return Err(SnbtDeserialisationError::from_visitor(
