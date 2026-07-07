@@ -1,3 +1,4 @@
+use std::assert_matches;
 use std::str::FromStr as _;
 
 use crab_nbt::{NbtCompound, NbtTag, nbt};
@@ -5,15 +6,6 @@ use crab_nbt::{NbtCompound, NbtTag, nbt};
 macro_rules! assert_parse {
     ($input:expr, $expected:expr) => {
         assert_eq!($input.parse(), Ok($expected))
-    };
-}
-
-macro_rules! assert_parse_failure {
-    ($input:expr) => {
-        ::std::assert_matches!($input.parse::<NbtTag>(), Err(_))
-    };
-    ($input:expr, $err:expr) => {
-        assert_eq!($input.parse::<NbtTag>(), Err($err))
     };
 }
 
@@ -118,5 +110,5 @@ fn nbt_strings() {
     );
 
     // Minecraft does not follow UAX44-LM2 (loose matching)
-    assert_parse_failure!(r#""\N{Low-Line}""#);
+    assert_matches!(NbtTag::from_str(r#""\N{Low-Line}""#), Err(_));
 }
