@@ -1,7 +1,7 @@
 use std::assert_matches;
 use std::str::FromStr as _;
 
-use crab_nbt::{NbtCompound, NbtTag, nbt};
+use crab_nbt::{nbt, NbtCompound, NbtTag};
 
 macro_rules! assert_parse {
     ($input:expr, $expected:expr) => {
@@ -14,7 +14,10 @@ fn tag_helper(s: &str) -> NbtTag {
 }
 
 fn wrap(tag: NbtTag) -> NbtTag {
-    NbtCompound { child_tags: vec![(String::new(), tag)] }.into()
+    NbtCompound {
+        child_tags: vec![(String::new(), tag)],
+    }
+    .into()
 }
 
 #[test]
@@ -27,7 +30,12 @@ fn nbt_list() {
     assert_eq!(tag_helper("[]"), NbtTag::List(vec![]));
     assert_eq!(
         tag_helper("[A,B,C ,D,      E,    F    ,   G    ]"),
-        NbtTag::List("ABCDEFG".chars().map(|c| NbtTag::String(c.to_string())).collect())
+        NbtTag::List(
+            "ABCDEFG"
+                .chars()
+                .map(|c| NbtTag::String(c.to_string()))
+                .collect()
+        )
     );
     assert_eq!(
         tag_helper("[A,[],B,{}]"),
@@ -41,7 +49,8 @@ fn nbt_list() {
     assert_eq!(
         tag_helper("[\"A\", \"B\", C, \"D\", E]"),
         NbtTag::List(
-            "ABCDE".chars()
+            "ABCDE"
+                .chars()
                 .map(|c| c.to_string())
                 .map(NbtTag::String)
                 .collect()
@@ -63,7 +72,8 @@ fn nbt_compound() {
         NbtCompound::from_str("{components:[]}").unwrap(),
         nbt!("", {
             "components": []
-        }).into()
+        })
+        .into()
     )
 }
 
@@ -84,7 +94,7 @@ fn nbt_numbers() {
     assert_parse!("10SB", NbtTag::Byte(10));
 
     // assert_parse!("0x1f", NbtTag::Int(0x1f));
-    
+
     const TRUE: NbtTag = NbtTag::Byte(1);
     const FALSE: NbtTag = NbtTag::Byte(0);
     assert_parse!("bool(500)", TRUE);
@@ -100,13 +110,13 @@ fn nbt_fails() {
     assert_matches!(r#"{"": {}}"#.parse::<NbtTag>(), Err(_));
 
     assert_matches!("1a".parse::<NbtTag>(), Err(_));
-    // assert_matches!("0x".parse::<NbtTag>(), Err(_));
+    assert_matches!("0x".parse::<NbtTag>(), Err(_));
     assert_matches!("_1E1".parse::<NbtTag>(), Err(_));
     assert_matches!("1_E1".parse::<NbtTag>(), Err(_));
-    // assert_matches!("1E_1".parse::<NbtTag>(), Err(_));
+    assert_matches!("1E_1".parse::<NbtTag>(), Err(_));
     assert_matches!("1E1_".parse::<NbtTag>(), Err(_));
-    // assert_matches!("1E.1".parse::<NbtTag>(), Err(_));
-    // assert_matches!("1E1.".parse::<NbtTag>(), Err(_));
+    assert_matches!("1E.1".parse::<NbtTag>(), Err(_));
+    assert_matches!("1E1.".parse::<NbtTag>(), Err(_));
 }
 
 #[test]
