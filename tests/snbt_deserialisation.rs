@@ -66,7 +66,32 @@ fn nbt_uuids() {
     assert_parse!(
         "uuid(\"7c3be0c5-6abd-4fa5-b3f1-0634daa981df\")",
         NbtTag::IntArray(vec![2084298949, 1790791589, -1276049868, -626425377])
-    )
+    );
+    assert_parse!(
+        "uuid(\"7c3be0c5-6abd-4fa5-b3f1-634daa981df\")",
+        NbtTag::IntArray(vec![2084298949, 1790791589, -1276049868, -626425377])
+    );
+    assert_parse!(
+        "uuid(\"7-c3be0c5-6abd4fa5b3f10634-daa981d-f\")",
+        NbtTag::IntArray(vec![7, -523958732, -1742929920, 15])
+    );
+    assert_parse!(
+        "uuid(\"7-c-3-be0c56abd4fa5-b3f10634daa981df\")",
+        NbtTag::IntArray(vec![7, 786435, 1336215092, -626425377])
+    );
+
+    assert!("uuid(7c3be0c5-6abd-4fa5-b3f1-0634daa981df)"
+        .parse::<NbtTag>()
+        .is_err());
+    assert!("uuid(\"7c3be0c56abd4fa5b3f10634daa981df\")"
+        .parse::<NbtTag>()
+        .is_err());
+    assert!("uuid(\"-7c3be0c56abd-4fa5b3f1-0634daa9-81df\")"
+        .parse::<NbtTag>()
+        .is_err());
+    assert!("uuid(\"7--c3be0c56-abd4fa5b-3f10634d-aa981df\")"
+        .parse::<NbtTag>()
+        .is_err());
 }
 
 #[test]

@@ -12,7 +12,8 @@ use crate::nbt::error::SnbtDeserialisationError;
 use crate::nbt::snbt::de::numbers::{may_start_number, read_number_or_numboid_const, NumberType};
 use crate::nbt::snbt::de::utils::{
     consume_whitespace, expect_char, expect_str, expect_str_ignore_case,
-    impl_FromStr_through_FromVisitor, read_slice_while, read_string, FromVisitor, StrVisitor,
+    impl_FromStr_through_FromVisitor, read_quoted_string, read_slice_while, read_string,
+    FromVisitor, StrVisitor,
 };
 
 /// Enum representing the different types of NBT tags.
@@ -382,7 +383,9 @@ impl FromVisitor for NbtTag {
                     Ok(tag)
                 } else if expect_str(visitor, "uuid(").is_ok() {
                     consume_whitespace(visitor);
-                    let tag = uuid_from_str(&read_string(visitor)?).map(NbtTag::IntArray);
+                    let tag = uuid_from_str(&read_quoted_string(visitor)?)
+                        .map(Vec::from)
+                        .map(NbtTag::IntArray);
 
                     consume_whitespace(visitor);
                     expect_char(visitor, ')', ")")?;
@@ -412,42 +415,113 @@ fn write_listlike<T: Display, I: IntoIterator<Item = T>>(
     write!(f, "]")
 }
 
-fn uuid_from_str(s: &str) -> Result<Vec<i32>, SnbtDeserialisationError> {
-    const UUID_V4_SIZE: usize = 16;
-    type Out = i32;
-
-    let mut bytes = [0u8; UUID_V4_SIZE];
-    for (i, res) in s
-        .split('-')
-        .flat_map(|substr| {
-            (0..(substr.len() / 2)).map(|i| &substr[2 * i..(2 * (i + 1)).min(substr.len())])
-        })
-        .map(|s| u8::from_str_radix(s, 16))
-        .enumerate()
-    {
-        if i >= bytes.len() {
-            return Err(SnbtDeserialisationError::UuidTooManyBytes);
-        }
-        bytes[i] = res.map_err(SnbtDeserialisationError::ParseIntError)?;
+fn uuid_from_str(name: &str) -> Result<[i32; 4], SnbtDeserialisationError> {
+    // 32 hex digits + 4 dashes
+    let len = name.len();
+    eprintln!("{len} {name}");
+    if len > 36 {
+        return Err(SnbtDeserialisationError::from_visitor(
+            &StrVisitor::new(name),
+            "UUID string too large",
+        ));
     }
-    // Transmuting here is preferable over producing the slices manually
-    // (e.g. bytes[0..4], bytes[4..8] etc.), because as of Rust 2024,
-    // RangeIndexing an array gives a slice, whose size is unknown at compile time.
-    // i32::from_be_bytes requires moving an array into it to work,
-    // so we would either have to copy the array or use a different method (of which I am not aware)
-    //
-    // SAFETY:
-    //  Arrays are purely groups of data whose size is determined at compile time.
-    //  More specifically, an array [T;N]'s size is determined by size_of::<T>()*N
-    //      and an element arr[i] is offset by i*size_of::<T>() bytes.
-    //  This means that [[T;N];M] has the same layout as a [T;N*M] with respect to its values.
-    //  Ergo, transmuting here is safe, because we don't change the bounds of any elements.
-    let parts: [[u8; size_of::<Out>()]; UUID_V4_SIZE / size_of::<Out>()] =
-        unsafe { std::mem::transmute(bytes) };
-    Ok(parts
-        .into_iter()
-        .map(|int_bytes| Out::from_be_bytes(int_bytes))
-        .collect())
+
+    // TODO: memchr
+    let dash_1 = name.find('-').ok_or_else(|| {
+        SnbtDeserialisationError::from_visitor(
+            &StrVisitor::new(name),
+            "uuid only has 0 of 4 dashes",
+        )
+    })?;
+    let dash_2 = dash_1
+        + 1
+        + name
+            .get(dash_1 + 1..)
+            .and_then(|s| s.find('-'))
+            .ok_or_else(|| {
+                SnbtDeserialisationError::from_visitor(
+                    &StrVisitor::new(name),
+                    "uuid only has 1 of 4 dashes",
+                )
+            })?;
+    let dash_3 = dash_2
+        + 1
+        + name
+            .get(dash_2 + 1..)
+            .and_then(|s| s.find('-'))
+            .ok_or_else(|| {
+                SnbtDeserialisationError::from_visitor(
+                    &StrVisitor::new(name),
+                    "uuid only has 2 of 4 dashes",
+                )
+            })?;
+    let dash_4 = dash_3
+        + 1
+        + name
+            .get(dash_3 + 1..)
+            .and_then(|s| s.find('-'))
+            .ok_or_else(|| {
+                SnbtDeserialisationError::from_visitor(
+                    &StrVisitor::new(name),
+                    "uuid only has 3 of 4 dashes",
+                )
+            })?;
+
+    if name.get(dash_4 + 1..).and_then(|s| s.find('-')).is_some() {
+        return Err(SnbtDeserialisationError::from_visitor(
+            &StrVisitor::new(name),
+            "uuid has more than 4 dashes",
+        ));
+    }
+
+    let mut msb = u64::from_str_radix(&name[..dash_1], 16).map_err(|_| {
+        SnbtDeserialisationError::from_visitor(
+            &StrVisitor::new(&name[..dash_1]),
+            "valid hexadecimal",
+        )
+    })? & 0xFFFF_FFFF;
+    msb <<= 16;
+    msb |= u64::from_str_radix(&name[dash_1 + 1..dash_2], 16).map_err(|_| {
+        SnbtDeserialisationError::from_visitor(
+            &StrVisitor::new(&name[dash_1 + 1..dash_2]),
+            "valid hexadecimal",
+        )
+    })? & 0xFFFF;
+    msb <<= 16;
+    msb |= u64::from_str_radix(&name[dash_2 + 1..dash_3], 16).map_err(|_| {
+        SnbtDeserialisationError::from_visitor(
+            &StrVisitor::new(&name[dash_2 + 1..dash_3]),
+            "valid hexadecimal",
+        )
+    })? & 0xFFFF;
+
+    let mut lsb = u64::from_str_radix(&name[dash_3 + 1..dash_4], 16).map_err(|_| {
+        SnbtDeserialisationError::from_visitor(
+            &StrVisitor::new(&name[dash_3 + 1..dash_4]),
+            "valid hexadecimal",
+        )
+    })? & 0xFFFF;
+    lsb <<= 48;
+    lsb |= u64::from_str_radix(&name[dash_4 + 1..], 16).map_err(|_| {
+        SnbtDeserialisationError::from_visitor(
+            &StrVisitor::new(&name[dash_4 + 1..]),
+            "valid hexadecimal",
+        )
+    })? & 0xFFFF_FFFF_FFFF;
+
+    let &[a, b] = msb.to_be_bytes().as_chunks::<4>().0 else {
+        unreachable!()
+    };
+    let &[c, d] = lsb.to_be_bytes().as_chunks::<4>().0 else {
+        unreachable!()
+    };
+
+    Ok([
+        i32::from_be_bytes(a),
+        i32::from_be_bytes(b),
+        i32::from_be_bytes(c),
+        i32::from_be_bytes(d),
+    ])
 }
 
 const LIST_SEPARATOR_MSG: &'static str = ", or ]";
