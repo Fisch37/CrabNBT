@@ -462,12 +462,7 @@ fn uuid_from_str(name: &str) -> Result<[i32; 4], SnbtDeserialisationError> {
         unreachable!()
     };
 
-    Ok([
-        i32::from_be_bytes(a),
-        i32::from_be_bytes(b),
-        i32::from_be_bytes(c),
-        i32::from_be_bytes(d),
-    ])
+    Ok([a, b, c, d].map(i32::from_be_bytes))
 }
 
 const LIST_SEPARATOR_MSG: &'static str = ", or ]";
