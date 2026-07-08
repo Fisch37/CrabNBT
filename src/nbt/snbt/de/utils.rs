@@ -501,8 +501,7 @@ where
             "C hexadecimal characters",
         ))
     } else {
-        Ok(parser(hex, 16)
-            .map_err(SnbtDeserialisationError::ParseIntError)?
+        Ok(parser(hex, 16)?
             .try_into()
             .expect("todo: better error structures"))
     }

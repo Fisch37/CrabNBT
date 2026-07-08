@@ -419,10 +419,7 @@ fn uuid_from_str(name: &str) -> Result<[i32; 4], SnbtDeserialisationError> {
     // 32 hex digits + 4 dashes
     let len = name.len();
     if len > 36 {
-        return Err(SnbtDeserialisationError::from_visitor(
-            &StrVisitor::new(name),
-            "UUID string too large",
-        ));
+        return Err(SnbtDeserialisationError::UuidStringTooBig);
     }
 
     let mut dashes = name
@@ -432,71 +429,31 @@ fn uuid_from_str(name: &str) -> Result<[i32; 4], SnbtDeserialisationError> {
         .map(|(i, _)| i);
 
     let Some(dash_1) = dashes.next() else {
-        return Err(SnbtDeserialisationError::from_visitor(
-            &StrVisitor::new(name),
-            "uuid only has 0 of 4 dashes",
-        ));
+        return Err(SnbtDeserialisationError::UuidNotEnoughDashes(0));
     };
     let Some(dash_2) = dashes.next() else {
-        return Err(SnbtDeserialisationError::from_visitor(
-            &StrVisitor::new(name),
-            "uuid only has 1 of 4 dashes",
-        ));
+        return Err(SnbtDeserialisationError::UuidNotEnoughDashes(1));
     };
     let Some(dash_3) = dashes.next() else {
-        return Err(SnbtDeserialisationError::from_visitor(
-            &StrVisitor::new(name),
-            "uuid only has 2 of 4 dashes",
-        ));
+        return Err(SnbtDeserialisationError::UuidNotEnoughDashes(2));
     };
     let Some(dash_4) = dashes.next() else {
-        return Err(SnbtDeserialisationError::from_visitor(
-            &StrVisitor::new(name),
-            "uuid only has 3 of 4 dashes",
-        ));
+        return Err(SnbtDeserialisationError::UuidNotEnoughDashes(3));
     };
 
     if dashes.next().is_some() {
-        return Err(SnbtDeserialisationError::from_visitor(
-            &StrVisitor::new(name),
-            "uuid has more than 4 dashes",
-        ));
+        return Err(SnbtDeserialisationError::UuidStringTooBig);
     }
 
-    let mut msb = u64::from_str_radix(&name[..dash_1], 16).map_err(|_| {
-        SnbtDeserialisationError::from_visitor(
-            &StrVisitor::new(&name[..dash_1]),
-            "valid hexadecimal",
-        )
-    })? & 0xFFFF_FFFF;
+    let mut msb = u64::from_str_radix(&name[..dash_1], 16)? & 0xFFFF_FFFF;
     msb <<= 16;
-    msb |= u64::from_str_radix(&name[dash_1 + 1..dash_2], 16).map_err(|_| {
-        SnbtDeserialisationError::from_visitor(
-            &StrVisitor::new(&name[dash_1 + 1..dash_2]),
-            "valid hexadecimal",
-        )
-    })? & 0xFFFF;
+    msb |= u64::from_str_radix(&name[dash_1 + 1..dash_2], 16)? & 0xFFFF;
     msb <<= 16;
-    msb |= u64::from_str_radix(&name[dash_2 + 1..dash_3], 16).map_err(|_| {
-        SnbtDeserialisationError::from_visitor(
-            &StrVisitor::new(&name[dash_2 + 1..dash_3]),
-            "valid hexadecimal",
-        )
-    })? & 0xFFFF;
+    msb |= u64::from_str_radix(&name[dash_2 + 1..dash_3], 16)? & 0xFFFF;
 
-    let mut lsb = u64::from_str_radix(&name[dash_3 + 1..dash_4], 16).map_err(|_| {
-        SnbtDeserialisationError::from_visitor(
-            &StrVisitor::new(&name[dash_3 + 1..dash_4]),
-            "valid hexadecimal",
-        )
-    })? & 0xFFFF;
+    let mut lsb = u64::from_str_radix(&name[dash_3 + 1..dash_4], 16)? & 0xFFFF;
     lsb <<= 48;
-    lsb |= u64::from_str_radix(&name[dash_4 + 1..], 16).map_err(|_| {
-        SnbtDeserialisationError::from_visitor(
-            &StrVisitor::new(&name[dash_4 + 1..]),
-            "valid hexadecimal",
-        )
-    })? & 0xFFFF_FFFF_FFFF;
+    lsb |= u64::from_str_radix(&name[dash_4 + 1..], 16)? & 0xFFFF_FFFF_FFFF;
 
     let &[a, b] = msb.to_be_bytes().as_chunks::<4>().0 else {
         unreachable!()
