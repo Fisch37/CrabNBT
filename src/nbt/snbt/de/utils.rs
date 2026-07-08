@@ -1,4 +1,4 @@
-use std::num::ParseIntError;
+use std::num::{NonZeroUsize, ParseIntError};
 use std::{borrow::Cow, fmt::Debug, iter::FusedIterator, result::Result as StdResult};
 
 use crate::nbt::error::SnbtDeserialisationError;
@@ -53,7 +53,12 @@ impl<'a> StrVisitor<'a> {
     /// It is guaranteed that the result of this method
     /// will be the same as the next result of [`Self::next`]
     pub fn peek(&self) -> Option<char> {
-        self.as_str().chars().next()
+        self.peek_nth(0)
+    }
+
+    /// Returns the 0-indexed nth unvisited char in the visitor without advancing.
+    pub fn peek_nth(&self, n: usize) -> Option<char> {
+        self.as_str().chars().nth(n)
     }
 
     /// Moves back to the last read character.
@@ -67,7 +72,19 @@ impl<'a> StrVisitor<'a> {
     /// It is guaranteed that the result of this method
     /// will be the same as the next result of [`Self::previous`]
     pub fn peek_previous(&mut self) -> Option<char> {
-        let pos = previous_char_boundary(self.slice, self.position);
+        self.peek_nth_previous(0)
+    }
+
+    /// Returns the 0-indexed nth previous char in the visitor without advancing.
+    pub fn peek_nth_previous(&self, n: usize) -> Option<char> {
+        let mut pos = self.position;
+        for _ in 0..=n {
+            if pos == 0 {
+                return None;
+            }
+
+            pos = previous_char_boundary(self.slice, pos);
+        }
         self.get_slice()[pos..].chars().next()
     }
 
