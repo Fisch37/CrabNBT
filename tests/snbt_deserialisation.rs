@@ -86,6 +86,9 @@ fn nbt_uuids() {
     assert!("uuid(\"7c3be0c56abd4fa5b3f10634daa981df\")"
         .parse::<NbtTag>()
         .is_err());
+    assert!("uuid(\"7c3be0c5-6abd-4fa5-b3f1-0634-daa981df\")"
+        .parse::<NbtTag>()
+        .is_err());
     assert!("uuid(\"-7c3be0c56abd-4fa5b3f1-0634daa9-81df\")"
         .parse::<NbtTag>()
         .is_err());

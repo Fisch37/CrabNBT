@@ -418,7 +418,6 @@ fn write_listlike<T: Display, I: IntoIterator<Item = T>>(
 fn uuid_from_str(name: &str) -> Result<[i32; 4], SnbtDeserialisationError> {
     // 32 hex digits + 4 dashes
     let len = name.len();
-    eprintln!("{len} {name}");
     if len > 36 {
         return Err(SnbtDeserialisationError::from_visitor(
             &StrVisitor::new(name),
@@ -426,48 +425,38 @@ fn uuid_from_str(name: &str) -> Result<[i32; 4], SnbtDeserialisationError> {
         ));
     }
 
-    // TODO: memchr
-    let dash_1 = name.find('-').ok_or_else(|| {
-        SnbtDeserialisationError::from_visitor(
+    let mut dashes = name
+        .chars()
+        .enumerate()
+        .filter(|(_, c)| *c == '-')
+        .map(|(i, _)| i);
+
+    let Some(dash_1) = dashes.next() else {
+        return Err(SnbtDeserialisationError::from_visitor(
             &StrVisitor::new(name),
             "uuid only has 0 of 4 dashes",
-        )
-    })?;
-    let dash_2 = dash_1
-        + 1
-        + name
-            .get(dash_1 + 1..)
-            .and_then(|s| s.find('-'))
-            .ok_or_else(|| {
-                SnbtDeserialisationError::from_visitor(
-                    &StrVisitor::new(name),
-                    "uuid only has 1 of 4 dashes",
-                )
-            })?;
-    let dash_3 = dash_2
-        + 1
-        + name
-            .get(dash_2 + 1..)
-            .and_then(|s| s.find('-'))
-            .ok_or_else(|| {
-                SnbtDeserialisationError::from_visitor(
-                    &StrVisitor::new(name),
-                    "uuid only has 2 of 4 dashes",
-                )
-            })?;
-    let dash_4 = dash_3
-        + 1
-        + name
-            .get(dash_3 + 1..)
-            .and_then(|s| s.find('-'))
-            .ok_or_else(|| {
-                SnbtDeserialisationError::from_visitor(
-                    &StrVisitor::new(name),
-                    "uuid only has 3 of 4 dashes",
-                )
-            })?;
+        ));
+    };
+    let Some(dash_2) = dashes.next() else {
+        return Err(SnbtDeserialisationError::from_visitor(
+            &StrVisitor::new(name),
+            "uuid only has 1 of 4 dashes",
+        ));
+    };
+    let Some(dash_3) = dashes.next() else {
+        return Err(SnbtDeserialisationError::from_visitor(
+            &StrVisitor::new(name),
+            "uuid only has 2 of 4 dashes",
+        ));
+    };
+    let Some(dash_4) = dashes.next() else {
+        return Err(SnbtDeserialisationError::from_visitor(
+            &StrVisitor::new(name),
+            "uuid only has 3 of 4 dashes",
+        ));
+    };
 
-    if name.get(dash_4 + 1..).and_then(|s| s.find('-')).is_some() {
+    if dashes.next().is_some() {
         return Err(SnbtDeserialisationError::from_visitor(
             &StrVisitor::new(name),
             "uuid has more than 4 dashes",
