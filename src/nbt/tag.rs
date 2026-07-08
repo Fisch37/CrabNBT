@@ -610,7 +610,7 @@ impl PrimitiveNumber for i32 {
 
 impl PrimitiveNumber for i64 {
     fn bits() -> u32 {
-        64
+        Self::BITS
     }
 
     fn number_type() -> NumberType {
