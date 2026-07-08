@@ -5,12 +5,16 @@ use crab_nbt::nbt::utils::*;
 use derive_more::From;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::io::Cursor;
-use std::mem::{Discriminant, discriminant};
+use std::mem::{discriminant, Discriminant};
 use std::str::FromStr;
 
-use crate::nbt::snbt::de::numbers::{may_start_number, read_number_or_numboid_const};
-use crate::nbt::snbt::de::utils::{FromVisitor, StrVisitor, consume_whitespace, expect_char, expect_str, impl_FromStr_through_FromVisitor, read_slice_while, read_string};
 use crate::nbt::error::SnbtDeserialisationError;
+use crate::nbt::snbt::de::numbers::{may_start_number, read_number_or_numboid_const, NumberType};
+use crate::nbt::snbt::de::utils::{
+    consume_whitespace, expect_char, expect_str, expect_str_ignore_case,
+    impl_FromStr_through_FromVisitor, read_quoted_string, read_slice_while, read_string,
+    FromVisitor, StrVisitor,
+};
 
 /// Enum representing the different types of NBT tags.
 /// Each variant corresponds to a different type of data that can be stored in an NBT tag.
@@ -270,14 +274,14 @@ impl NbtTag {
             &Short(x) => x != 0,
             &Int(x) => x != 0,
             &Long(x) => x != 0,
-            &Float(x) => x != 0.0,
-            &Double(x) => x != 0.0,
+            &Float(x) => x <= -1.0 || x >= 1.0,
+            &Double(x) => x <= -1.0 || x >= 1.0,
             ByteArray(x) => !x.is_empty(),
             IntArray(x) => !x.is_empty(),
             LongArray(x) => !x.is_empty(),
             String(x) => !x.is_empty(),
             List(x) => !x.is_empty(),
-            Compound(x) => !x.child_tags.is_empty()
+            Compound(x) => !x.child_tags.is_empty(),
         }
     }
 }
@@ -328,47 +332,50 @@ impl FromVisitor for NbtTag {
         const TRUE: NbtTag = NbtTag::Byte(1);
         const FALSE: NbtTag = NbtTag::Byte(0);
 
-        match visitor.peek().ok_or_else(
-            || SnbtDeserialisationError::from_visitor(visitor, "any SNBT character")
-        )? {
+        match visitor
+            .peek()
+            .ok_or_else(|| SnbtDeserialisationError::from_visitor(visitor, "any SNBT character"))?
+        {
             '{' => NbtCompound::from_visitor(visitor).map(NbtTag::Compound),
             '[' => {
                 _ = visitor.next();
                 consume_whitespace(visitor);
                 if visitor.next_if(|c| c == ']').is_some() {
                     Ok(NbtTag::List(vec![]))
-                } else if visitor.as_str().chars().nth(1).filter(|c| *c == ';').is_some() {
+                } else if visitor.peek_nth(1).filter(|c| *c == ';').is_some() {
                     // we know visitor.nth(1) will be Some and StrVisitor is fused
                     // => visitor.next must be Some
                     match visitor.next().unwrap() {
                         'I' => read_snbt_array::<i32>(visitor).map(NbtTag::IntArray),
-                        'B' => read_snbt_array::<i8>(visitor).map(
-                            |arr| NbtTag::ByteArray(arr.into_iter().map(|b| b as u8).collect())
-                        ),
+                        'B' => read_snbt_array::<i8>(visitor).map(|arr| {
+                            NbtTag::ByteArray(arr.into_iter().map(|b| b as u8).collect())
+                        }),
                         'L' => read_snbt_array::<i64>(visitor).map(NbtTag::LongArray),
-                        _ => return Err(SnbtDeserialisationError::from_visitor(
-                            visitor,
-                            "an array type identifier"
-                        ))
+                        _ => {
+                            return Err(SnbtDeserialisationError::from_visitor(
+                                visitor,
+                                "an array type identifier",
+                            ))
+                        }
                     }
                 } else {
                     // NOTE: This branch also triggers if visitor is fully consumed
                     read_list(visitor).map(NbtTag::List)
                 }
-            },
+            }
             c if may_start_number(c) => read_number_or_numboid_const(visitor),
             _ => {
-                if expect_str(visitor, "true").is_ok() {
+                if expect_str_ignore_case(visitor, "true").is_ok() {
                     Ok(TRUE)
-                } else if expect_str(visitor, "false").is_ok() {
+                } else if expect_str_ignore_case(visitor, "false").is_ok() {
                     Ok(FALSE)
                 } else if expect_str(visitor, "bool(").is_ok() {
                     consume_whitespace(visitor);
-                    
+
                     let tag = if visitor.peek().is_some() {
                         read_number_or_numboid_const(visitor)?.is_truthy().into()
                     } else {
-                        return Err(SnbtDeserialisationError::from_visitor(visitor, "EOF"))
+                        return Err(SnbtDeserialisationError::from_visitor(visitor, "EOF"));
                     };
                     // todo!("Read number or read true/false");
                     consume_whitespace(visitor);
@@ -376,9 +383,10 @@ impl FromVisitor for NbtTag {
                     Ok(tag)
                 } else if expect_str(visitor, "uuid(").is_ok() {
                     consume_whitespace(visitor);
-                    let tag = uuid_from_str(&read_string(visitor)?)
+                    let tag = uuid_from_str(&read_quoted_string(visitor)?)
+                        .map(Vec::from)
                         .map(NbtTag::IntArray);
-                    
+
                     consume_whitespace(visitor);
                     expect_char(visitor, ')', ")")?;
                     tag
@@ -407,44 +415,55 @@ fn write_listlike<T: Display, I: IntoIterator<Item = T>>(
     write!(f, "]")
 }
 
-fn uuid_from_str(s: &str) -> Result<Vec<i32>, SnbtDeserialisationError> {
-    const UUID_V4_SIZE: usize = 16;
-    type Out = i32;
-
-    let mut bytes = [0u8; UUID_V4_SIZE];
-    for (i, res) in s.split('-')
-        .flat_map(|substr| {
-            (0..(substr.len() / 2))
-                .map(|i| &substr[2*i..(2*(i+1)).min(substr.len())])
-        })
-        .map(|s| u8::from_str_radix(s, 16))
-        .enumerate()
-    {
-        if i >= bytes.len() {
-            todo!("better error structures");
-        }
-        bytes[i] = res.expect("todo: better error structures");
+fn uuid_from_str(name: &str) -> Result<[i32; 4], SnbtDeserialisationError> {
+    // 32 hex digits + 4 dashes
+    let len = name.len();
+    if len > 36 {
+        return Err(SnbtDeserialisationError::UuidStringTooBig);
     }
-    // Transmuting here is preferable over producing the slices manually
-    // (e.g. bytes[0..4], bytes[4..8] etc.), because as of Rust 2024,
-    // RangeIndexing an array gives a slice, whose size is unknown at compile time.
-    // i32::from_be_bytes requires moving an array into it to work,
-    // so we would either have to copy the array or use a different method (of which I am not aware)
-    // 
-    // SAFETY:
-    //  Arrays are purely groups of data whose size is determined at compile time.
-    //  More specifically, an array [T;N]'s size is determined by size_of::<T>()*N
-    //      and an element arr[i] is offset by i*size_of::<T>() bytes.
-    //  This means that [[T;N];M] has the same layout as a [T;N*M] with respect to its values.
-    //  Ergo, transmuting here is safe, because we don't change the bounds of any elements.
-    let parts: [[u8; size_of::<Out>()]; UUID_V4_SIZE/size_of::<Out>()] = unsafe { std::mem::transmute(bytes) };
-    Ok(
-        parts.into_iter()
-            .map(|int_bytes| Out::from_be_bytes(int_bytes))
-            .collect()
-    )
-}
 
+    let mut dashes = name
+        .chars()
+        .enumerate()
+        .filter(|(_, c)| *c == '-')
+        .map(|(i, _)| i);
+
+    let Some(dash_1) = dashes.next() else {
+        return Err(SnbtDeserialisationError::UuidNotEnoughDashes(0));
+    };
+    let Some(dash_2) = dashes.next() else {
+        return Err(SnbtDeserialisationError::UuidNotEnoughDashes(1));
+    };
+    let Some(dash_3) = dashes.next() else {
+        return Err(SnbtDeserialisationError::UuidNotEnoughDashes(2));
+    };
+    let Some(dash_4) = dashes.next() else {
+        return Err(SnbtDeserialisationError::UuidNotEnoughDashes(3));
+    };
+
+    if dashes.next().is_some() {
+        return Err(SnbtDeserialisationError::UuidStringTooBig);
+    }
+
+    let mut msb = u64::from_str_radix(&name[..dash_1], 16)? & 0xFFFF_FFFF;
+    msb <<= 16;
+    msb |= u64::from_str_radix(&name[dash_1 + 1..dash_2], 16)? & 0xFFFF;
+    msb <<= 16;
+    msb |= u64::from_str_radix(&name[dash_2 + 1..dash_3], 16)? & 0xFFFF;
+
+    let mut lsb = u64::from_str_radix(&name[dash_3 + 1..dash_4], 16)? & 0xFFFF;
+    lsb <<= 48;
+    lsb |= u64::from_str_radix(&name[dash_4 + 1..], 16)? & 0xFFFF_FFFF_FFFF;
+
+    let &[a, b] = msb.to_be_bytes().as_chunks::<4>().0 else {
+        unreachable!()
+    };
+    let &[c, d] = lsb.to_be_bytes().as_chunks::<4>().0 else {
+        unreachable!()
+    };
+
+    Ok([a, b, c, d].map(i32::from_be_bytes))
+}
 
 const LIST_SEPARATOR_MSG: &'static str = ", or ]";
 /// Reads an SNBT List with correction for heterogeneous lists.
@@ -455,74 +474,186 @@ fn read_list(visitor: &mut StrVisitor) -> Result<Vec<NbtTag>, SnbtDeserialisatio
     loop {
         consume_whitespace(visitor);
         let tag = NbtTag::from_visitor(visitor)?;
-        homogeneous_content_type = homogeneous_content_type.map_or(
-            Some(Some(discriminant(&tag))),
-            |list_content| 
-            Some(list_content.filter(|d| *d == discriminant(&tag)))
-        );
+        homogeneous_content_type = homogeneous_content_type
+            .map_or(Some(Some(discriminant(&tag))), |list_content| {
+                Some(list_content.filter(|d| *d == discriminant(&tag)))
+            });
         content.push(tag);
 
         consume_whitespace(visitor);
 
-        if visitor.next_if(|c| c == ',' || c == ']')
-            .ok_or_else(||
-                SnbtDeserialisationError::from_visitor(visitor, LIST_SEPARATOR_MSG)
-            )? == ']'
+        match visitor
+            .next_if(|c| c == ',' || c == ']')
+            .ok_or_else(|| SnbtDeserialisationError::from_visitor(visitor, LIST_SEPARATOR_MSG))?
         {
-            break
+            ']' => break,
+            ',' => {
+                consume_whitespace(visitor);
+                if visitor.next_if(|c| c == ']').is_some() {
+                    break;
+                }
+            }
+            _ => (),
         }
     }
-    if homogeneous_content_type.unwrap_or(Some(discriminant(&NbtTag::End))).is_none() {
+    if homogeneous_content_type
+        .unwrap_or(Some(discriminant(&NbtTag::End)))
+        .is_none()
+    {
         // Heterogeneous List correction
         // Nbt does not allow hetereogeneous lists
         // (lists where each element may have a different type),
         // but SNBT does (since https://www.minecraft.net/en-us/article/minecraft-snapshot-25w09a).
-        // 
+        //
         // Heterogenous lists must be deserialised into lists of type NbtCompound,
         // with each element contained in a compound like so {"": element}
-        content = content.into_iter().map(|elem| {
-            [(String::new(), elem)].into_iter().collect::<NbtCompound>().into()
-        }).collect();
+        content = content
+            .into_iter()
+            .map(|elem| {
+                [(String::new(), elem)]
+                    .into_iter()
+                    .collect::<NbtCompound>()
+                    .into()
+            })
+            .collect();
     } else {
         content.shrink_to_fit();
     }
     Ok(content)
 }
 
-/// Reads an SNBT array of type Number,
-/// assuming the array identifier (e.g. `[I;`) has already been consumed, save for the semicolon.
 fn read_snbt_array<Number>(
-    visitor: &mut StrVisitor
+    visitor: &mut StrVisitor,
 ) -> Result<Vec<Number>, SnbtDeserialisationError>
-    where Number: FromStr,
-        // TODO: Remove me after better error structures
-        Number::Err: std::error::Error
+where
+    Number: PrimitiveNumber + From<i8> + TryFrom<i16> + TryFrom<i32> + TryFrom<i64>,
+    SnbtDeserialisationError: From<<Number as TryFrom<i16>>::Error>
+        + From<<Number as TryFrom<i32>>::Error>
+        + From<<Number as TryFrom<i64>>::Error>,
 {
     consume_whitespace(visitor);
     // This was missing once. It took me days to find that bug!
     expect_char(visitor, ';', ";")?;
-    let mut content = vec![];
+    let mut content: Vec<Number> = vec![];
     loop {
         consume_whitespace(visitor);
-        content.push(
-            read_slice_while(visitor, |c| c.is_ascii_digit() || c == '-')
-                .parse()
-                .expect("todo: better error structures")
-        );
+        if visitor.peek() != Some(']') {
+            let num = crate::nbt::snbt::de::numbers::read_number(
+                visitor,
+                Some(Number::number_type()),
+                None,
+            )?;
+
+            // Only allow number that have an equal or smaller width than the type of the array
+            match num {
+                // Byte is the smallest number, so conversion to a larger one always succeeds
+                NbtTag::Byte(num) => content.push(num.into()),
+                NbtTag::Short(num) => {
+                    // Only accept Short if the width type of the array is equal or larger than the width of a Short,
+                    // otherwise, return an error to say we are only expecting smaller numbers
+                    if Number::bits() >= i16::BITS {
+                        content.push(num.try_into()?)
+                    } else {
+                        return Err(SnbtDeserialisationError::from_visitor(visitor, "byte"));
+                    }
+                }
+                NbtTag::Int(num) => {
+                    // Only accept Int if the width type of the array is equal or larger than the width of an Int,
+                    // otherwise, return an error to say we are only expecting smaller numbers
+                    if Number::bits() >= i32::BITS {
+                        content.push(num.try_into()?)
+                    } else {
+                        return Err(SnbtDeserialisationError::from_visitor(
+                            visitor,
+                            "short or byte",
+                        ));
+                    }
+                }
+                NbtTag::Long(num) => {
+                    // Only accept Long if the width type of the array is equal or larger than the width of a Long,
+                    // otherwise, return an error to say we are only expecting smaller numbers
+                    if Number::bits() >= i64::BITS {
+                        content.push(num.try_into()?)
+                    } else {
+                        return Err(SnbtDeserialisationError::from_visitor(
+                            visitor,
+                            "int, short, or byte",
+                        ));
+                    }
+                }
+                _ => return Err(SnbtDeserialisationError::from_visitor(visitor, "number")),
+            }
+        }
 
         consume_whitespace(visitor);
-        if visitor.next_if(|c| c == ',' || c == ']').ok_or_else(
-            || SnbtDeserialisationError::from_visitor(visitor, LIST_SEPARATOR_MSG)
-        )? == ']' {
-            break
+        match visitor
+            .next_if(|c| c == ',' || c == ']')
+            .ok_or_else(|| SnbtDeserialisationError::from_visitor(visitor, LIST_SEPARATOR_MSG))?
+        {
+            ']' => break,
+            ',' => {
+                consume_whitespace(visitor);
+                if visitor.next_if(|c| c == ']').is_some() {
+                    break;
+                }
+            }
+            _ => (),
         }
     }
     Ok(content)
 }
 
+trait PrimitiveNumber: Sized {
+    fn bits() -> u32;
+    fn number_type() -> NumberType;
+}
+
+impl PrimitiveNumber for i8 {
+    fn bits() -> u32 {
+        Self::BITS
+    }
+
+    fn number_type() -> NumberType {
+        NumberType::Byte
+    }
+}
+
+impl PrimitiveNumber for i16 {
+    fn bits() -> u32 {
+        Self::BITS
+    }
+
+    fn number_type() -> NumberType {
+        NumberType::Short
+    }
+}
+
+impl PrimitiveNumber for i32 {
+    fn bits() -> u32 {
+        Self::BITS
+    }
+
+    fn number_type() -> NumberType {
+        NumberType::Integer
+    }
+}
+
+impl PrimitiveNumber for i64 {
+    fn bits() -> u32 {
+        Self::BITS
+    }
+
+    fn number_type() -> NumberType {
+        NumberType::Long
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{NbtTag, nbt::{snbt::de::utils::StrVisitor, tag::read_number_or_numboid_const}};
+    use crate::{
+        nbt::{snbt::de::utils::StrVisitor, tag::read_number_or_numboid_const},
+        NbtTag,
+    };
 
     fn number_helper(s: &str) -> NbtTag {
         read_number_or_numboid_const(&mut StrVisitor::new(s)).unwrap()
