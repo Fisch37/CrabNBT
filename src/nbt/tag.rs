@@ -482,13 +482,18 @@ fn read_list(visitor: &mut StrVisitor) -> Result<Vec<NbtTag>, SnbtDeserialisatio
 
         consume_whitespace(visitor);
 
-        if visitor
+        match visitor
             .next_if(|c| c == ',' || c == ']')
             .ok_or_else(|| SnbtDeserialisationError::from_visitor(visitor, LIST_SEPARATOR_MSG))?
-            == ']'
-            || visitor.next_if(|c| c == ']').is_some()
         {
-            break;
+            ']' => break,
+            ',' => {
+                consume_whitespace(visitor);
+                if visitor.next_if(|c| c == ']').is_some() {
+                    break;
+                }
+            }
+            _ => (),
         }
     }
     if homogeneous_content_type
@@ -581,13 +586,18 @@ where
         }
 
         consume_whitespace(visitor);
-        if visitor
+        match visitor
             .next_if(|c| c == ',' || c == ']')
             .ok_or_else(|| SnbtDeserialisationError::from_visitor(visitor, LIST_SEPARATOR_MSG))?
-            == ']'
-            || visitor.next_if(|c| c == ']').is_some()
         {
-            break;
+            ']' => break,
+            ',' => {
+                consume_whitespace(visitor);
+                if visitor.next_if(|c| c == ']').is_some() {
+                    break;
+                }
+            }
+            _ => (),
         }
     }
     Ok(content)
