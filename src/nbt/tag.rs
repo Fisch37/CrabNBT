@@ -471,6 +471,7 @@ fn read_list(visitor: &mut StrVisitor) -> Result<Vec<NbtTag>, SnbtDeserialisatio
             .next_if(|c| c == ',' || c == ']')
             .ok_or_else(|| SnbtDeserialisationError::from_visitor(visitor, LIST_SEPARATOR_MSG))?
             == ']'
+            || visitor.next_if(|c| c == ']').is_some()
         {
             break;
         }
@@ -560,6 +561,7 @@ where
             .next_if(|c| c == ',' || c == ']')
             .ok_or_else(|| SnbtDeserialisationError::from_visitor(visitor, LIST_SEPARATOR_MSG))?
             == ']'
+            || visitor.next_if(|c| c == ']').is_some()
         {
             break;
         }
