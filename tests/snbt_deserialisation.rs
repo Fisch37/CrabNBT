@@ -30,6 +30,7 @@ fn nbt_tag() {
 #[test]
 fn nbt_list() {
     assert_eq!(tag_helper("[]"), NbtTag::List(vec![]));
+    assert_matches!("[,]".parse::<NbtTag>(), Err(_));
     assert_eq!(
         tag_helper("[A,B,C ,D,      E,    F    ,   G    ]"),
         NbtTag::List(
@@ -118,6 +119,7 @@ fn nbt_numbers() {
 #[test]
 fn nbt_arrays() {
     assert_parse!("[I;]", NbtTag::IntArray(Vec::new()));
+    assert_matches!("[I;,]".parse::<NbtTag>(), Err(_));
     assert_parse!("[I; 0, 1B, 2S, 3I]", NbtTag::IntArray(vec![0, 1, 2, 3]));
     assert_parse!(
         "[L; 0, 1B, 2S, 3I, 4L,]",
