@@ -523,17 +523,24 @@ where
                 Some(Number::number_type()),
                 None,
             )?;
+
+            // Only allow number that have an equal or smaller width than the type of the array
             match num {
+                // Byte is the smallest number, so conversion to a larger one always succeeds
                 NbtTag::Byte(num) => content.push(num.into()),
                 NbtTag::Short(num) => {
-                    if Number::bits() >= i16::bits() {
+                    // Only accept Short if the width type of the array is equal or larger than the width of a Short,
+                    // otherwise, return an error to say we are only expecting smaller numbers
+                    if Number::bits() >= i16::BITS {
                         content.push(num.try_into()?)
                     } else {
                         return Err(SnbtDeserialisationError::from_visitor(visitor, "byte"));
                     }
                 }
                 NbtTag::Int(num) => {
-                    if Number::bits() >= i32::bits() {
+                    // Only accept Int if the width type of the array is equal or larger than the width of an Int,
+                    // otherwise, return an error to say we are only expecting smaller numbers
+                    if Number::bits() >= i32::BITS {
                         content.push(num.try_into()?)
                     } else {
                         return Err(SnbtDeserialisationError::from_visitor(
@@ -543,7 +550,9 @@ where
                     }
                 }
                 NbtTag::Long(num) => {
-                    if Number::bits() >= i64::bits() {
+                    // Only accept Long if the width type of the array is equal or larger than the width of a Long,
+                    // otherwise, return an error to say we are only expecting smaller numbers
+                    if Number::bits() >= i64::BITS {
                         content.push(num.try_into()?)
                     } else {
                         return Err(SnbtDeserialisationError::from_visitor(
