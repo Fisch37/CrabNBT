@@ -29,6 +29,7 @@ as-any = "0.3.2"
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"] }
 flate2 = "1.1.0"
+gungraun = "0.19.4"
 
 [package.metadata."docs.rs"]
 all-features = true
@@ -46,4 +47,9 @@ harness = false
 
 [[bench]]
 name = "write"
+harness = false
+
+[[bench]]
+name = "gungraun"
+bench = false
 harness = false

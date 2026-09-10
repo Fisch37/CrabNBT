@@ -1,7 +1,10 @@
-use std::fmt::{self, Display, Formatter};
+use std::{
+    cmp::Ordering,
+    fmt::{self, Display, Formatter},
+};
 
 use crate::error::Error;
-use bytes::Buf;
+use bytes::{Buf, BufMut, BytesMut};
 
 use simd_cesu8::decode;
 
@@ -29,6 +32,17 @@ pub fn get_nbt_string(bytes: &mut impl Buf) -> Result<String, Error> {
     let string_bytes = bytes.copy_to_bytes(len);
     let string = decode(&string_bytes).map_err(|_| Error::InvalidJavaString)?;
     Ok(string.to_string())
+}
+
+pub fn serialize_str_into(s: &str, bytes: &mut BytesMut) {
+    if s.is_empty() {
+        bytes.put_u16(0);
+        return;
+    }
+
+    let java_string = simd_cesu8::encode(s);
+    bytes.put_u16(java_string.len() as u16);
+    bytes.put_slice(&java_string);
 }
 
 // This can be improved once rust-lang/rust#132980 is resolved:
@@ -131,6 +145,33 @@ pub(crate) fn escape_string_value(s: &str) -> String {
     output.replace_range(0..1, &escape_char.to_string());
     output.push(escape_char);
     output
+}
+
+/// Determines the ordering of `a` in regards to `b`.
+/// This is basically [Iterator::cmp_by], which as of the time of writing unstable.
+/// Once that is stabilised, this function can be replaced.
+pub fn compare_by<I1, I2, F>(a: I1, b: I2, mut comparator: F) -> Ordering
+where
+    I1: IntoIterator,
+    I2: IntoIterator,
+    F: FnMut(I1::Item, I2::Item) -> Ordering,
+{
+    let mut i1 = a.into_iter();
+    let mut i2 = b.into_iter();
+    loop {
+        return match (i1.next(), i2.next()) {
+            (None, None) => Ordering::Equal,
+            (None, Some(_)) => Ordering::Less,
+            (Some(_), None) => Ordering::Greater,
+            (Some(a), Some(b)) => {
+                let comp = comparator(a, b);
+                if comp == Ordering::Equal {
+                    continue;
+                }
+                comp
+            }
+        };
+    }
 }
 
 #[cfg(test)]

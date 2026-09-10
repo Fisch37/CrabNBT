@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     fmt::Display,
     ops::{Index, IndexMut},
 };
@@ -11,6 +12,7 @@ use crate::{
     nbt::{
         nbt_trait::{NbtCompatible, PrivateNbtCompatible},
         utils::{
+            compare_by,
             ids::{self, *},
             write_listlike,
         },
@@ -62,7 +64,7 @@ macro_rules! call_uniform {
     };
 }
 
-#[derive(Clone, Debug, PartialEq, PartialOrd, From, TryInto)]
+#[derive(Clone, Debug, PartialEq, From, TryInto)]
 #[repr(u8)]
 pub enum NbtList {
     End = END_ID,
@@ -130,7 +132,7 @@ impl NbtList {
         Ok(wrapper(list))
     }
 
-    fn ser_list_helper<T: PrivateNbtCompatible>(inner: &Vec<T>, bytes: &mut impl BufMut) {
+    fn ser_list_helper<T: PrivateNbtCompatible>(inner: &[T], bytes: &mut impl BufMut) {
         if inner.is_empty() {
             bytes.put_u8(ids::END_ID);
             bytes.put_i32(0);
@@ -178,6 +180,32 @@ impl<'a> IntoIterator for &'a mut NbtList {
 
     fn into_iter(self) -> Self::IntoIter {
         Self::IntoIter::new(self)
+    }
+}
+impl Eq for NbtList {}
+impl Ord for NbtList {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (Self::Byte(a), Self::Byte(b)) => a.cmp(b),
+            (Self::Short(a), Self::Short(b)) => a.cmp(b),
+            (Self::Int(a), Self::Int(b)) => a.cmp(b),
+            (Self::Long(a), Self::Long(b)) => a.cmp(b),
+            // This can be done using cmp_by when it is stabilised
+            (Self::Float(a), Self::Float(b)) => compare_by(a, b, f32::total_cmp),
+            (Self::Double(a), Self::Double(b)) => compare_by(a, b, f64::total_cmp),
+            (Self::ByteArray(a), Self::ByteArray(b)) => a.cmp(b),
+            (Self::String(a), Self::String(b)) => a.cmp(b),
+            (Self::List(a), Self::List(b)) => a.cmp(b),
+            (Self::Compound(a), Self::Compound(b)) => a.cmp(b),
+            (Self::IntArray(a), Self::IntArray(b)) => a.cmp(b),
+            (Self::LongArray(a), Self::LongArray(b)) => a.cmp(b),
+            _ => self.get_type_id().cmp(&other.get_type_id()),
+        }
+    }
+}
+impl PartialOrd for NbtList {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 

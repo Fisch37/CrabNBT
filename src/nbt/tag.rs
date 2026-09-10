@@ -3,6 +3,7 @@ use crab_nbt::error::Error;
 use crab_nbt::nbt::compound::NbtCompound;
 use crab_nbt::nbt::utils::*;
 use derive_more::From;
+use std::cmp::Ordering;
 use std::fmt::{self, Display, Formatter};
 use std::io::Cursor;
 
@@ -36,7 +37,7 @@ macro_rules! call_uniform {
 /// Enum representing the different types of NBT tags.
 /// Each variant corresponds to a different type of data that can be stored in an NBT tag.
 #[repr(u8)]
-#[derive(Clone, Debug, PartialEq, PartialOrd, From)]
+#[derive(Clone, Debug, From)]
 pub enum NbtTag {
     End = END_ID,
     Byte(i8) = BYTE_ID,
@@ -53,6 +54,54 @@ pub enum NbtTag {
     LongArray(Vec<i64>) = LONG_ARRAY_ID,
 }
 
+impl PartialEq for NbtTag {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Byte(a), Self::Byte(b)) => a == b,
+            (Self::Short(a), Self::Short(b)) => a == b,
+            (Self::Int(a), Self::Int(b)) => a == b,
+            (Self::Long(a), Self::Long(b)) => a == b,
+            (Self::Float(a), Self::Float(b)) => a.total_cmp(b) == Ordering::Equal,
+            (Self::Double(a), Self::Double(b)) => a.total_cmp(b) == Ordering::Equal,
+            (Self::ByteArray(a), Self::ByteArray(b)) => a == b,
+            (Self::String(a), Self::String(b)) => a == b,
+            (Self::List(a), Self::List(b)) => a == b,
+            (Self::Compound(a), Self::Compound(b)) => a == b,
+            (Self::IntArray(a), Self::IntArray(b)) => a == b,
+            (Self::LongArray(a), Self::LongArray(b)) => a == b,
+            _ => self.get_type_id() == other.get_type_id(),
+        }
+    }
+}
+
+impl Eq for NbtTag {}
+
+impl PartialOrd for NbtTag {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for NbtTag {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (Self::Byte(a), Self::Byte(b)) => a.cmp(b),
+            (Self::Short(a), Self::Short(b)) => a.cmp(b),
+            (Self::Int(a), Self::Int(b)) => a.cmp(b),
+            (Self::Long(a), Self::Long(b)) => a.cmp(b),
+            (Self::Float(a), Self::Float(b)) => a.total_cmp(b),
+            (Self::Double(a), Self::Double(b)) => a.total_cmp(b),
+            (Self::ByteArray(a), Self::ByteArray(b)) => a.cmp(b),
+            (Self::String(a), Self::String(b)) => a.cmp(b),
+            (Self::List(a), Self::List(b)) => a.cmp(b),
+            (Self::Compound(a), Self::Compound(b)) => a.cmp(b),
+            (Self::IntArray(a), Self::IntArray(b)) => a.cmp(b),
+            (Self::LongArray(a), Self::LongArray(b)) => a.cmp(b),
+            _ => self.get_type_id().cmp(&other.get_type_id()),
+        }
+    }
+}
+
 impl NbtTag {
     /// Returns the numeric id associated with the data type.
     pub const fn get_type_id(&self) -> u8 {
@@ -62,18 +111,26 @@ impl NbtTag {
 
     pub fn serialize(&self) -> Bytes {
         let mut bytes = BytesMut::new();
-        bytes.put_u8(self.get_type_id());
-        bytes.put(self.serialize_data());
+        self.serialize_into(&mut bytes);
         bytes.freeze()
+    }
+
+    pub fn serialize_into(&self, bytes: &mut BytesMut) {
+        bytes.put_u8(self.get_type_id());
+        self.serialize_data_into(bytes);
     }
 
     pub fn serialize_data(&self) -> Bytes {
         let mut bytes = BytesMut::new();
+        self.serialize_data_into(&mut bytes);
+        bytes.freeze()
+    }
+
+    pub fn serialize_data_into(&self, bytes: &mut BytesMut) {
         call_uniform!(
-            (self.serialize_data(&mut bytes)),
+            (self.serialize_data(bytes)),
             () // End has no data, so serialization is noop
         );
-        bytes.freeze()
     }
 
     pub fn deserialize(bytes: &mut impl Buf) -> Result<NbtTag, Error> {
