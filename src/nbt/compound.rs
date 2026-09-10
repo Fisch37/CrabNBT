@@ -189,7 +189,7 @@ impl PrivateNbtCompatible for NbtCompound {
     where
         Self: Sized,
     {
-        Ok(NbtCompound::deserialize_content(bytes)?)
+        NbtCompound::deserialize_content(bytes)
     }
 
     fn serialize_data(&self, bytes: &mut impl BufMut)

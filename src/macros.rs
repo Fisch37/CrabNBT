@@ -13,7 +13,7 @@ impl<T: ::crab_nbt::NbtCompatible> IntoNbtCompatible for T {
         self
     }
 }
-impl<'a> IntoNbtCompatible for &'a str {
+impl IntoNbtCompatible for &str {
     type Output = String;
 
     fn into_nbt_compatible(self) -> Self::Output {

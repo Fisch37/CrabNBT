@@ -98,7 +98,7 @@ impl NbtTag {
             ) => {
                 {
                     fn deser_helper<T: PrivateNbtCompatible>(bytes: &mut impl Buf) -> Result<T, Error> {
-                        Ok(T::deserialize_data(bytes)?)
+                        T::deserialize_data(bytes)
                     }
                     match $target {
                         END_ID => $end,

@@ -103,7 +103,7 @@ impl NbtList {
         call_uniform!((self.get(index).map(|x| x as &dyn NbtCompatible)), None)
     }
 
-    pub fn get_mut<'a>(&'a mut self, index: usize) -> Option<&'a mut dyn NbtCompatible> {
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut dyn NbtCompatible> {
         call_uniform!(
             (self.get_mut(index).map(|x| x as &mut dyn NbtCompatible)),
             None

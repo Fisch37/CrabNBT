@@ -53,11 +53,11 @@ where
 
 /// Write an arbitrary list to the [`Formatter`] `f`.
 /// Intended for SNBT serialisation.
-/// 
+///
 /// The output will look like this:
 /// `[{prefix}{elements{affix}, }*]`
 /// (Note that the last comma and space will be omitted)
-/// 
+///
 /// e.g. `write_listlike(f, "L;", "l", [1,2,3])`
 ///     will write `[L;1l, 2l, 3l]`
 pub(crate) fn write_listlike<T: Display, I: IntoIterator<Item = T>>(
