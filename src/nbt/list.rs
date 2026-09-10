@@ -281,6 +281,11 @@ macro_rules! impl_TryAsRefAndMut {
         )+
     };
 }
+/// Implements [`Vec`] methods on the NbtList by delegating the method call.
+/// Can only be used on methods whose signature is independent of the list type.
+///
+/// The `on_end` expression (the expression after the `|`) **must** be identical
+/// to the return value on every other variant of [`NbtList`] when the contained [`Vec`] is empty.
 macro_rules! implUniformMethods {
     ($($method:ident($($modifiers:tt),*;$($param_name:ident: $param_type:ty),*) $(-> $return:ty)? | $on_end:expr),+) => {
         impl NbtList {
@@ -307,7 +312,7 @@ macro_rules! implUniformMethods {
         }
     };
 }
-// TODO: Is it better to implement or not to implement these methods?
+
 implUniformMethods! {
     len(&;) -> usize | 0,
     capacity(&;) -> usize | 0,
@@ -317,7 +322,7 @@ implUniformMethods! {
     clear(&,mut;) | (),
     is_empty(&;) -> bool | true,
     dedup(&,mut;) | (),
-    swap(&,mut; a: usize, b: usize) | panic!("Tried to swap on an empty list with. {a}<->{b}"),
+    swap(&,mut; a: usize, b: usize) | panic!("Tried to swap on an empty list with {a}<->{b}"),
     reverse(&,mut;) | (),
     rotate_left(&,mut; mid: usize) | if mid > 0 { panic!("Tried to rotate an empty list") },
     rotate_right(&,mut; k: usize) | if k > 0 { panic!("Tried to rotate an empty list") }
