@@ -1,11 +1,45 @@
-use std::{fmt::Display, ops::{Index, IndexMut}};
+use std::{
+    fmt::Display,
+    ops::{Index, IndexMut},
+};
 
-use bytes::Bytes;
+use bytes::{Buf, BufMut, Bytes};
 use derive_more::{From, TryInto};
 
-use crate::{NbtCompound, nbt::{nbt_trait::NbtCompatible, utils::{ids::*, write_listlike}}};
+use crate::{
+    error::Error,
+    nbt::{
+        nbt_trait::{NbtCompatible, PrivateNbtCompatible},
+        utils::{
+            ids::{self, *},
+            write_listlike,
+        },
+    },
+    NbtCompound,
+};
 
 macro_rules! call_uniform {
+    // cursed function call signature, but what can you do
+    (($self:ident,$method:path[$($parameter:tt),*]), $end_case:expr) => {
+        {
+            use self::NbtList::*;
+            match $self {
+                End => $end_case,
+                Byte(x) => $method(x,$($parameter),*),
+                Short(x) => $method(x,$($parameter),*),
+                Int(x) => $method(x,$($parameter),*),
+                Long(x) => $method(x,$($parameter),*),
+                Float(x) => $method(x,$($parameter),*),
+                Double(x) => $method(x,$($parameter),*),
+                ByteArray(x) => $method(x,$($parameter),*),
+                String(x) => $method(x,$($parameter),*),
+                List(x) => $method(x,$($parameter),*),
+                Compound(x) => $method(x,$($parameter),*),
+                IntArray(x) => $method(x,$($parameter),*),
+                LongArray(x) => $method(x,$($parameter),*),
+            }
+        }
+    };
     (($self:ident.$($expression:tt)+), $end_case:expr) => {
         {
             use self::NbtList::*;
@@ -31,9 +65,6 @@ macro_rules! call_uniform {
 #[derive(Clone, Debug, PartialEq, PartialOrd, From, TryInto)]
 #[repr(u8)]
 pub enum NbtList {
-    // TODO: Everything about End.
-    //  This is needed because an empty list serializes to a list of type END_TAG
-    //  Need to check how this can be treated in various applications
     End = END_ID,
     Byte(Vec<i8>) = BYTE_ID,
     Short(Vec<i16>) = SHORT_ID,
@@ -59,12 +90,12 @@ impl NbtList {
             Long(_) => LONG_ID,
             Float(_) => FLOAT_ID,
             Double(_) => DOUBLE_ID,
-            ByteArray(_)  => BYTE_ARRAY_ID,
+            ByteArray(_) => BYTE_ARRAY_ID,
             String(_) => STRING_ID,
             List(_) => LIST_ID,
             Compound(_) => COMPOUND_ID,
             IntArray(_) => INT_ARRAY_ID,
-            LongArray(_) => LONG_ARRAY_ID
+            LongArray(_) => LONG_ARRAY_ID,
         }
     }
 
@@ -72,8 +103,11 @@ impl NbtList {
         call_uniform!((self.get(index).map(|x| x as &dyn NbtCompatible)), None)
     }
 
-    pub fn get_mut<'a>(&'a mut self, index: usize) -> Option<&'a mut dyn NbtCompatible > {
-        call_uniform!((self.get_mut(index).map(|x| x as &mut dyn NbtCompatible)), None)
+    pub fn get_mut<'a>(&'a mut self, index: usize) -> Option<&'a mut dyn NbtCompatible> {
+        call_uniform!(
+            (self.get_mut(index).map(|x| x as &mut dyn NbtCompatible)),
+            None
+        )
     }
 
     pub fn iter(&self) -> Iter<'_> {
@@ -83,18 +117,49 @@ impl NbtList {
     pub fn iter_mut(&mut self) -> IterMut<'_> {
         self.into_iter()
     }
+
+    fn deser_list_helper<T: PrivateNbtCompatible>(
+        bytes: &mut impl Buf,
+        len: usize,
+        wrapper: impl FnOnce(Vec<T>) -> NbtList,
+    ) -> Result<NbtList, Error> {
+        let mut list = Vec::with_capacity(len);
+        for _ in 0..len {
+            list.push(T::deserialize_data(bytes)?);
+        }
+        Ok(wrapper(list))
+    }
+
+    fn ser_list_helper<T: PrivateNbtCompatible>(inner: &Vec<T>, bytes: &mut impl BufMut) {
+        if inner.is_empty() {
+            bytes.put_u8(ids::END_ID);
+            bytes.put_i32(0);
+        } else {
+            bytes.put_u8(T::get_id());
+            bytes.put_i32(inner.len() as i32);
+            for element in inner.iter() {
+                element.serialize_data(bytes);
+            }
+        }
+    }
 }
-// Slice indexes are impossible on erased vecs, because there is no uniform output type
+// Slices are impossible on erased vecs, because there is no uniform output type
 impl Index<usize> for NbtList {
     type Output = dyn NbtCompatible;
 
     fn index(&self, index: usize) -> &Self::Output {
-        call_uniform!((self.index(index)), panic!("Index out of bounds for empty list. Index {index}"))
+        call_uniform!(
+            (self.index(index)),
+            panic!("Index out of bounds for empty list. Index {index}")
+        )
     }
 }
 impl IndexMut<usize> for NbtList {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        call_uniform!((self.index_mut(index)), panic!("Index out of bounds for empty list. Index {index}"))
+        call_uniform!(
+            (self.index_mut(index)),
+            panic!("Index out of bounds for empty list. Index {index}")
+        )
     }
 }
 impl<'a> IntoIterator for &'a NbtList {
@@ -113,6 +178,57 @@ impl<'a> IntoIterator for &'a mut NbtList {
 
     fn into_iter(self) -> Self::IntoIter {
         Self::IntoIter::new(self)
+    }
+}
+
+impl PrivateNbtCompatible for NbtList {
+    fn deserialize_data(bytes: &mut impl Buf) -> Result<Self, Error>
+    where
+        Self: Sized,
+    {
+        let tag_type_id = bytes.try_get_u8()?;
+        let len = bytes.try_get_i32()?;
+        match tag_type_id {
+            ids::END_ID => Ok(NbtList::End),
+            ids::BYTE_ID => NbtList::deser_list_helper(bytes, len as usize, NbtList::Byte),
+            ids::SHORT_ID => NbtList::deser_list_helper(bytes, len as usize, NbtList::Short),
+            ids::INT_ID => NbtList::deser_list_helper(bytes, len as usize, NbtList::Int),
+            ids::LONG_ID => NbtList::deser_list_helper(bytes, len as usize, NbtList::Long),
+            ids::FLOAT_ID => NbtList::deser_list_helper(bytes, len as usize, NbtList::Float),
+            ids::DOUBLE_ID => NbtList::deser_list_helper(bytes, len as usize, NbtList::Double),
+            ids::BYTE_ARRAY_ID => {
+                NbtList::deser_list_helper(bytes, len as usize, NbtList::ByteArray)
+            }
+            ids::STRING_ID => NbtList::deser_list_helper(bytes, len as usize, NbtList::String),
+            ids::LIST_ID => NbtList::deser_list_helper(bytes, len as usize, NbtList::List),
+            ids::COMPOUND_ID => NbtList::deser_list_helper(bytes, len as usize, NbtList::Compound),
+            ids::INT_ARRAY_ID => NbtList::deser_list_helper(bytes, len as usize, NbtList::IntArray),
+            ids::LONG_ARRAY_ID => {
+                NbtList::deser_list_helper(bytes, len as usize, NbtList::LongArray)
+            }
+            _ => Err(Error::UnknownTagId(tag_type_id)),
+        }
+    }
+
+    fn serialize_data(&self, bytes: &mut impl bytes::BufMut)
+    where
+        Self: Sized,
+    {
+        call_uniform!((self, NbtList::ser_list_helper[bytes]), {
+            bytes.put_u8(ids::END_ID);
+            bytes.put_i32(0);
+        })
+    }
+
+    fn write_snbt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write_listlike(f, "", "", self.iter().map(|el| el.snbt_dyn()))
+    }
+
+    fn get_id() -> u8
+    where
+        Self: Sized,
+    {
+        ids::LIST_ID
     }
 }
 impl Display for NbtList {
@@ -205,7 +321,6 @@ implUniformMethods! {
     reverse(&,mut;) | (),
     rotate_left(&,mut; mid: usize) | if mid > 0 { panic!("Tried to rotate an empty list") },
     rotate_right(&,mut; k: usize) | if k > 0 { panic!("Tried to rotate an empty list") }
-    
 }
 
 impl_TryAsRefAndMut! {
@@ -225,11 +340,14 @@ impl_TryAsRefAndMut! {
 
 pub struct Iter<'a> {
     list: &'a NbtList,
-    index: Option<usize>
+    index: Option<usize>,
 }
 impl<'a> Iter<'a> {
     fn new(list: &'a NbtList) -> Self {
-        Self { list, index: Some(0) }
+        Self {
+            list,
+            index: Some(0),
+        }
     }
 }
 impl<'a> Iterator for Iter<'a> {
@@ -249,11 +367,14 @@ impl<'a> Iterator for Iter<'a> {
 
 pub struct IterMut<'a> {
     list: &'a mut NbtList,
-    index: Option<usize>
+    index: Option<usize>,
 }
 impl<'a> IterMut<'a> {
     fn new(list: &'a mut NbtList) -> Self {
-        Self { list, index: Some(0) }
+        Self {
+            list,
+            index: Some(0),
+        }
     }
 }
 impl<'a> Iterator for IterMut<'a> {
@@ -261,7 +382,9 @@ impl<'a> Iterator for IterMut<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let index = self.index?;
-        let val: Option<&'a mut dyn NbtCompatible> = self.list.get_mut(index)
+        let val: Option<&'a mut dyn NbtCompatible> = self
+            .list
+            .get_mut(index)
             // The borrow checker is being too eager with get_mut and degrades lifetime 'a to the lifetime of self.
             // For reasons unknown to me this only happens with mutable pointers.
             // Other methods of lifetime expansion (such as pointer casting) have proven unsuccessful, so transmute is used as a last resort.

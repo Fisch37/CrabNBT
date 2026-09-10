@@ -1,11 +1,12 @@
 use crate::nbt::list::NbtList;
-use crate::nbt::utils::{escape_name, join_formatted};
+use crate::nbt::nbt_trait::PrivateNbtCompatible;
+use crate::nbt::utils::{escape_name, ids, join_formatted};
 use crate::{error::Error, Nbt};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use crab_nbt::nbt::tag::NbtTag;
 use crab_nbt::nbt::utils::{get_nbt_string, END_ID};
 use derive_more::Into;
-use std::fmt::{self, Debug, Display, Formatter};
+use std::fmt::{self, Debug, Display, Formatter, Result as FmtResult};
 use std::io::{Cursor, Write};
 use std::vec::IntoIter;
 
@@ -177,5 +178,31 @@ impl Display for NbtCompound {
         join_formatted(f, ", ", iterator)?;
 
         write!(f, "}}")
+    }
+}
+impl PrivateNbtCompatible for NbtCompound {
+    fn write_snbt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "{self}")
+    }
+
+    fn deserialize_data(bytes: &mut impl Buf) -> Result<Self, Error>
+    where
+        Self: Sized,
+    {
+        Ok(NbtCompound::deserialize_content(bytes)?)
+    }
+
+    fn serialize_data(&self, bytes: &mut impl BufMut)
+    where
+        Self: Sized,
+    {
+        bytes.put(self.serialize_content());
+    }
+
+    fn get_id() -> u8
+    where
+        Self: Sized,
+    {
+        ids::COMPOUND_ID
     }
 }

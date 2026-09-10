@@ -1,4 +1,3 @@
-
 // TODO: Is it really a good idea to introduce two generic traits in an NBT library?
 
 pub trait TryAsRef<T: ?Sized> {

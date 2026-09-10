@@ -9,8 +9,8 @@ use std::ops::Deref;
 
 pub mod compound;
 pub mod list;
+pub(crate) mod nbt_trait;
 pub mod tag;
-pub mod nbt_trait;
 pub mod utils;
 
 /// Represents the main NBT structure.
