@@ -1,22 +1,22 @@
-use crate::nbt::nbt_trait::PrivateNbtCompatible;
-
-/// Trick trait to help the [`crate::nbt!`] macro to handle [`str`] literals.
-trait IntoNbtCompatible {
+/// This is a secret trait to help the [`crate::nbt!`] macro handle [`str`] literals.
+/// It is unfortunately not possible to fully hide this trait as the macro needs to be able to use it at every call site.
+#[doc(hidden)]
+pub trait IntoNbtCompatible {
     type Output;
 
-    fn into_compatible(self) -> Self::Output;
+    fn into_nbt_compatible(self) -> Self::Output;
 }
-impl<T: PrivateNbtCompatible> IntoNbtCompatible for T {
+impl<T: ::crab_nbt::NbtCompatible> IntoNbtCompatible for T {
     type Output = T;
 
-    fn into_compatible(self) -> Self::Output {
+    fn into_nbt_compatible(self) -> Self::Output {
         self
     }
 }
 impl<'a> IntoNbtCompatible for &'a str {
     type Output = String;
 
-    fn into_compatible(self) -> Self::Output {
+    fn into_nbt_compatible(self) -> Self::Output {
         self.to_string()
     }
 }
@@ -107,8 +107,10 @@ macro_rules! nbt_inner {
         $crate::NbtTag::ByteArray(::bytes::Bytes::from_iter([$($lit),*]))
     };
     ([$($lit:literal),* $(,)?]) => {
-        // FIXME: The new structure of NbtList needs to be incorporated into the nbt macro
-        $crate::NbtTag::List((::std::vec![$($lit),*]).into())
+        {
+            use $crate::IntoNbtCompatible as _;
+            $crate::NbtTag::List((::std::vec![$($lit.into_nbt_compatible()),*]).into())
+        }
     };
     ([$($t:tt),* $(,)?]) => {
         $crate::NbtTag::List((::std::vec![$(nbt_inner!($t)),*]).into())
