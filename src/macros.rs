@@ -106,7 +106,10 @@ macro_rules! nbt_inner {
     ([Byte; $($lit:literal),* $(,)?]) => {
         $crate::NbtTag::ByteArray(::bytes::Bytes::from_iter([$($lit),*]))
     };
-    ([$($lit:literal),* $(,)?]) => {
+    ([]) => {
+        $crate::NbtTag::List($crate::NbtList::End)
+    };
+    ([$($lit:literal),+ $(,)?]) => {
         {
             use $crate::IntoNbtCompatible as _;
             $crate::NbtTag::List((::std::vec![$($lit.into_nbt_compatible()),*]).into())
