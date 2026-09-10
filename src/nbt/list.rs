@@ -20,31 +20,60 @@ use crate::{
     NbtCompound,
 };
 
-macro_rules! call_uniform {
-    // cursed function call signature, but what can you do
-    (($self:ident,$method:path[$($parameter:tt),*]), $end_case:expr) => {
+/// Helper macro to generate match cases to run code on the contents of an [NbtList].
+///
+/// Has two formats: Expression mode and Method mode.
+/// - Expression mode is the most powerful, and can be used to execute
+///   any expression on the content of the list, potentially returning a value.
+/// - Method mode is specifically for executing [Vec] methods
+///   (and methods of any type [Vec] [std::ops::Deref]s to).
+///
+/// ```
+/// use crab_nbt::NbtList;
+/// use crab_nbt::nbt_list_call_uniform;
+/// let mut nbt_list = NbtList::Short(vec![1,2,3]);
+/// // Expression mode
+/// nbt_list_call_uniform!(
+///     // may be any expression resulting in an NbtList or a borrowed form of it.
+///     &mut nbt_list,
+///     content,
+///     content.push(Default::default()),
+///     panic!("Cannot push default to an empty list")
+/// );
+/// assert_eq!(nbt_list, NbtList::Short(vec![1,2,3,0]));
+///
+/// // Method mode
+/// // (note that this particular use case is already supported via NbtList::len)
+/// assert_eq!(
+///     nbt_list_call_uniform!((nbt_list.len()), 0),
+///     4
+/// );
+/// ```
+#[macro_export]
+macro_rules! nbt_list_call_uniform {
+    ($self:expr,$content:ident, $expression:expr, $end_case:expr) => {
         {
-            use self::NbtList::*;
+            use $crate::NbtList::*;
             match $self {
                 End => $end_case,
-                Byte(x) => $method(x,$($parameter),*),
-                Short(x) => $method(x,$($parameter),*),
-                Int(x) => $method(x,$($parameter),*),
-                Long(x) => $method(x,$($parameter),*),
-                Float(x) => $method(x,$($parameter),*),
-                Double(x) => $method(x,$($parameter),*),
-                ByteArray(x) => $method(x,$($parameter),*),
-                String(x) => $method(x,$($parameter),*),
-                List(x) => $method(x,$($parameter),*),
-                Compound(x) => $method(x,$($parameter),*),
-                IntArray(x) => $method(x,$($parameter),*),
-                LongArray(x) => $method(x,$($parameter),*),
+                Byte($content) => $expression,
+                Short($content) => $expression,
+                Int($content) => $expression,
+                Long($content) => $expression,
+                Float($content) => $expression,
+                Double($content) => $expression,
+                ByteArray($content) => $expression,
+                String($content) => $expression,
+                List($content) => $expression,
+                Compound($content) => $expression,
+                IntArray($content) => $expression,
+                LongArray($content) => $expression,
             }
         }
     };
     (($self:ident.$($expression:tt)+), $end_case:expr) => {
         {
-            use self::NbtList::*;
+            use $crate::NbtList::*;
             match $self {
                 End => $end_case,
                 Byte(x) => x.$($expression)*,
@@ -64,9 +93,10 @@ macro_rules! call_uniform {
     };
 }
 
-#[derive(Clone, Debug, PartialEq, From, TryInto)]
+#[derive(Default, Clone, Debug, PartialEq, From, TryInto)]
 #[repr(u8)]
 pub enum NbtList {
+    #[default]
     End = END_ID,
     Byte(Vec<i8>) = BYTE_ID,
     Short(Vec<i16>) = SHORT_ID,
@@ -82,7 +112,7 @@ pub enum NbtList {
     LongArray(Vec<Vec<i64>>) = LONG_ARRAY_ID,
 }
 impl NbtList {
-    pub fn get_type_id(&self) -> u8 {
+    pub fn get_content_type_id(&self) -> u8 {
         use self::NbtList::*;
         match self {
             End => END_ID,
@@ -102,11 +132,11 @@ impl NbtList {
     }
 
     pub fn get(&self, index: usize) -> Option<&dyn NbtCompatible> {
-        call_uniform!((self.get(index).map(|x| x as &dyn NbtCompatible)), None)
+        nbt_list_call_uniform!((self.get(index).map(|x| x as &dyn NbtCompatible)), None)
     }
 
     pub fn get_mut(&mut self, index: usize) -> Option<&mut dyn NbtCompatible> {
-        call_uniform!(
+        nbt_list_call_uniform!(
             (self.get_mut(index).map(|x| x as &mut dyn NbtCompatible)),
             None
         )
@@ -150,7 +180,7 @@ impl Index<usize> for NbtList {
     type Output = dyn NbtCompatible;
 
     fn index(&self, index: usize) -> &Self::Output {
-        call_uniform!(
+        nbt_list_call_uniform!(
             (self.index(index)),
             panic!("Index out of bounds for empty list. Index {index}")
         )
@@ -158,7 +188,7 @@ impl Index<usize> for NbtList {
 }
 impl IndexMut<usize> for NbtList {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        call_uniform!(
+        nbt_list_call_uniform!(
             (self.index_mut(index)),
             panic!("Index out of bounds for empty list. Index {index}")
         )
@@ -199,7 +229,7 @@ impl Ord for NbtList {
             (Self::Compound(a), Self::Compound(b)) => a.cmp(b),
             (Self::IntArray(a), Self::IntArray(b)) => a.cmp(b),
             (Self::LongArray(a), Self::LongArray(b)) => a.cmp(b),
-            _ => self.get_type_id().cmp(&other.get_type_id()),
+            _ => self.get_content_type_id().cmp(&other.get_content_type_id()),
         }
     }
 }
@@ -242,7 +272,7 @@ impl PrivateNbtCompatible for NbtList {
     where
         Self: Sized,
     {
-        call_uniform!((self, NbtList::ser_list_helper[bytes]), {
+        nbt_list_call_uniform!(self, content, NbtList::ser_list_helper(content, bytes), {
             bytes.put_u8(ids::END_ID);
             bytes.put_i32(0);
         })

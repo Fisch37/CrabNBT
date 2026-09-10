@@ -42,7 +42,7 @@ pub trait NbtCompatible: PrivateNbtCompatible {
         SnbtDisplay(self)
     }
 
-    fn as_tag(self) -> NbtTag;
+    fn into_tag(self) -> NbtTag;
 }
 impl dyn NbtCompatible {
     // This method cannot be named "snbt" due to rustc falsely claiming
@@ -70,7 +70,7 @@ macro_rules! impl_NbtCompatible {
                     <$type>::get_id()
                 }
 
-                fn as_tag(self) -> NbtTag {
+                fn into_tag(self) -> NbtTag {
                     $wrapper(self)
                 }
             }

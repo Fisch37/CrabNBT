@@ -27,6 +27,26 @@ pub mod ids {
     pub const LONG_ARRAY_ID: u8 = 12;
 }
 
+pub const fn get_nbt_type_name(id: u8) -> Option<&'static str> {
+    use ids::*;
+    Some(match id {
+        END_ID => "end",
+        BYTE_ID => "byte",
+        SHORT_ID => "short",
+        INT_ID => "int",
+        LONG_ID => "long",
+        FLOAT_ID => "float",
+        DOUBLE_ID => "double",
+        BYTE_ARRAY_ID => "byte array",
+        STRING_ID => "string",
+        LIST_ID => "list",
+        COMPOUND_ID => "compound",
+        INT_ARRAY_ID => "int array",
+        LONG_ARRAY_ID => "long array",
+        _ => return None,
+    })
+}
+
 pub fn get_nbt_string(bytes: &mut impl Buf) -> Result<String, Error> {
     let len = bytes.try_get_u16()? as usize;
     let string_bytes = bytes.copy_to_bytes(len);
