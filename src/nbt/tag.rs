@@ -126,7 +126,7 @@ impl NbtTag {
         bytes.freeze()
     }
 
-    pub fn serialize_data_into(&self, bytes: &mut BytesMut) {
+    pub fn serialize_data_into(&self, bytes: &mut impl BufMut) {
         call_uniform!(
             (self.serialize_data(bytes)),
             () // End has no data, so serialization is noop

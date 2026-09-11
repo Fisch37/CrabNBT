@@ -55,7 +55,7 @@ impl NbtCompound {
         bytes.freeze()
     }
 
-    pub fn serialize_content_into(&self, bytes: &mut BytesMut) {
+    pub fn serialize_content_into(&self, bytes: &mut impl BufMut) {
         for (name, tag) in &self.child_tags {
             bytes.put_u8(tag.get_type_id());
             serialize_str_into(name, bytes);
@@ -200,7 +200,7 @@ impl PrivateNbtCompatible for NbtCompound {
     where
         Self: Sized,
     {
-        bytes.put(self.serialize_content());
+        self.serialize_content_into(bytes);
     }
 
     fn get_id() -> u8

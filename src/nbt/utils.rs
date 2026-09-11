@@ -54,7 +54,7 @@ pub fn get_nbt_string(bytes: &mut impl Buf) -> Result<String, Error> {
     Ok(string.to_string())
 }
 
-pub fn serialize_str_into(s: &str, bytes: &mut BytesMut) {
+pub fn serialize_str_into(s: &str, bytes: &mut impl BufMut) {
     if s.is_empty() {
         bytes.put_u16(0);
         return;
