@@ -94,6 +94,7 @@ macro_rules! nbt_list_call_uniform {
 }
 
 #[derive(Default, Clone, Debug, PartialEq, From, TryInto)]
+#[try_into(owned, ref, ref_mut)]
 #[repr(u8)]
 pub enum NbtList {
     #[default]
@@ -296,49 +297,6 @@ impl Display for NbtList {
     }
 }
 
-macro_rules! impl_TryAsRefAndMut {
-    // empty lists are always serialized as lists of type TAG_END in NBT
-    // such a list could have any type, so all TryAsRef and TryAsMut calls must succeed on it.
-    // to ensure that no behaviour changes occur between reloading of a list, any TryAsRef and TryAsMut on empty lists succeeds.
-    ($(($variant:ident, $type:ty)),+) => {
-        use crate::{TryAsRef, TryAsMut};
-        $(
-            impl TryAsRef<Vec<$type>> for NbtList {
-                fn try_as_ref(&self) -> Option<&Vec<$type>> {
-                    static EMPTY_VEC: Vec<$type> = Vec::new();
-                    match self {
-                        Self::$variant(x) => Some(x),
-                        _ => {
-                            if self.is_empty() {
-                                Some(&EMPTY_VEC)
-                            } else {
-                                None
-                            }
-                        }
-                    }
-                }
-            }
-            impl TryAsMut<Vec<$type>> for NbtList {
-                fn try_as_mut(&mut self) -> Option<&mut Vec<$type>> {
-                    match self {
-                        Self::$variant(x) => Some(x),
-                        _ => {
-                            if self.is_empty() {
-                                *self = Self::$variant(Vec::new());
-                                match self {
-                                    Self::$variant(x) => Some(x),
-                                    _ => unreachable!()
-                                }
-                            } else {
-                                None
-                            }
-                        }
-                    }
-                }
-            }
-        )+
-    };
-}
 /// Implements [`Vec`] methods on the NbtList by delegating the method call.
 /// Can only be used on methods whose signature is independent of the list type.
 ///
@@ -384,21 +342,6 @@ implUniformMethods! {
     reverse(&,mut;) | (),
     rotate_left(&,mut; mid: usize) | if mid > 0 { panic!("Tried to rotate an empty list") },
     rotate_right(&,mut; k: usize) | if k > 0 { panic!("Tried to rotate an empty list") }
-}
-
-impl_TryAsRefAndMut! {
-    (Byte, i8),
-    (Short, i16),
-    (Int, i32),
-    (Long, i64),
-    (Float, f32),
-    (Double, f64),
-    (ByteArray, Bytes),
-    (String, String),
-    (List, NbtList),
-    (Compound, NbtCompound),
-    (IntArray, Vec<i32>),
-    (LongArray, Vec<i64>)
 }
 
 pub struct Iter<'a> {

@@ -9,7 +9,6 @@ use std::io::Cursor;
 
 use crate::nbt::list::NbtList;
 use crate::nbt::nbt_trait::{NbtCompatible, PrivateNbtCompatible};
-use crate::{TryAsMut, TryAsRef};
 
 macro_rules! call_uniform {
     (($self:ident$(.$($expression:tt)+)?), $end_case:expr) => {
@@ -285,14 +284,20 @@ impl NbtTag {
             _ => None,
         }
     }
-}
-impl TryAsRef<dyn NbtCompatible> for NbtTag {
-    fn try_as_ref(&self) -> Option<&dyn NbtCompatible> {
+
+    /// Returns a [Some] with a reference to a dyn [NbtCompatible],
+    /// if this tag is not [NbtTag::End], else [None].
+    /// 
+    /// See also: [NbtTag::as_nbt_compatible_mut]
+    pub fn as_nbt_compatible(&self) -> Option<&dyn NbtCompatible> {
         Some(call_uniform!((self), return None))
     }
-}
-impl TryAsMut<dyn NbtCompatible> for NbtTag {
-    fn try_as_mut(&mut self) -> Option<&mut dyn NbtCompatible> {
+
+    /// Returns a [Some] with a mutable reference to a dyn [NbtCompatible],
+    /// if this tag is not [NbtTag::End], else [None].
+    /// 
+    /// See also: [NbtTag::as_nbt_compatible]
+    pub fn as_nbt_compatible_mut(&mut self) -> Option<&mut dyn NbtCompatible> {
         Some(call_uniform!((self), return None))
     }
 }
