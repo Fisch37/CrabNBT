@@ -136,6 +136,59 @@ impl NbtList {
         self.into_iter()
     }
 
+    /// Unpacks this list and converts it into a "heterogeneous" list of items
+    /// wrapped in NbtCompounds like so: `{"": <element}`.
+    /// 
+    /// This operation will always wrap the list __even if it is already a wrapped list__!
+    /// If you only want to ensure your list is "heterogeneous", use [NbtList::ensure_wrapped].
+    pub fn into_wrapped(self) -> Vec<NbtCompound> {
+        nbt_list_call_uniform!(
+            self,
+            content,
+            content.into_iter()
+                .map(|element| NbtCompound {
+                    child_tags: vec![(String::new(), element.into_tag())]
+                })
+                .collect(),
+            vec![]
+        )
+    }
+
+    /// Ensures that this list is a wrapped list, if it wasn't already.
+    ///
+    /// More formally, this method checks whether the list is currently wrapped.
+    /// If it is not, it calls [NbtList::into_wrapped] and replaces this list with the result.
+    /// 
+    /// Returns a mutable reference to the contents of `self`, after potentially having wrapped its prior contents.
+    pub fn ensure_wrapped(&mut self) -> &mut Vec<NbtCompound> {
+        if !self.is_wrapped() {
+            *self = NbtList::Compound(std::mem::take(self).into_wrapped());
+        }
+        match self {
+            NbtList::Compound(x) => x,
+            _ => unreachable!("list must be a compound list")
+        }
+    }
+
+    /// Checks whether this list is a wrapped list.
+    /// 
+    /// A list is considered wrapped, if its children are [NbtCompound]s
+    /// with only one element, whose key is the empty string.
+    /// This is the serialised result of heterogeneous lists in SNBT.
+    pub fn is_wrapped(&self) -> bool {
+        match self {
+            Self::Compound(contents) => {
+                // TODO: This check is probably too expensive for real-world use.
+                contents.iter()
+                    .all(|compound| {
+                        let tags = &compound.child_tags;
+                        tags.len() == 1 && tags[0].0.is_empty()
+                    })
+            },
+            _ => false
+        }
+    }
+
     fn deser_list_helper<T: PrivateNbtCompatible>(
         bytes: &mut impl Buf,
         len: usize,
