@@ -9,7 +9,7 @@ use crate::{
         list::NbtList,
         utils::{escape_string_value, get_nbt_string, ids::*, read_array, write_listlike},
     },
-    NbtCompound, NbtTag, TryAsMut, TryAsRef,
+    NbtCompound, NbtTag
 };
 
 /// Implements behaviour for nbt-datatypes that should not be exposed outside the library.
@@ -50,15 +50,13 @@ impl dyn NbtCompatible {
     pub fn snbt_dyn(&self) -> SnbtDisplay<'_, dyn NbtCompatible> {
         SnbtDisplay(self)
     }
-}
-impl<T: NbtCompatible> TryAsRef<T> for dyn NbtCompatible {
-    fn try_as_ref(&self) -> Option<&T> {
+
+    pub fn as_concrete<T: NbtCompatible>(&self) -> Option<&T> {
         self.as_any().downcast_ref()
     }
-}
-impl<T: NbtCompatible> TryAsMut<T> for dyn NbtCompatible {
-    fn try_as_mut(&mut self) -> Option<&mut T> {
-        self.as_any_mut().downcast_mut()
+
+    pub fn as_concrete_mut<T: NbtCompatible>(&mut self) -> Option<&mut T> {
+       self.as_any_mut().downcast_mut()
     }
 }
 
