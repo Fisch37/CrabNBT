@@ -20,69 +20,263 @@ use crate::{
     NbtCompound,
 };
 
-/// Helper macro to generate match cases to run code on the contents of an [NbtList].
+/// Helper macro to run code on the contents of an [NbtList].
 ///
-/// Has two formats: Expression mode and Method mode.
-/// - Expression mode is the most powerful, and can be used to execute
-///   any expression on the content of the list, potentially returning a value.
+/// Has three formats: Expression mode and Method mode, Free mode.
+/// - Expression mode can be used to evaluate a single expression
+///   on the contents of the list in a type-agnostic way.
 /// - Method mode is specifically for executing [Vec] methods
 ///   (and methods of any type [Vec] [std::ops::Deref]s to).
+/// - Free mode allows different expressions for different list types.
+///   It also includes variant expansions as a shortcut for common
+///   variant groups. The following expansions are supported:
+///   `AnyFloat`, `AnyInteger`, `AnyNumber`, `AnyArray`
+/// 
 ///
 /// ```
-/// use crab_nbt::NbtList;
-/// use crab_nbt::nbt_list_call_uniform;
+/// use crab_nbt::{
+///     NbtList,
+///     NbtTag,
+///     nbt_list_call_uniform,
+///     NbtCompatible as _
+/// };
 /// let mut nbt_list = NbtList::Short(vec![1,2,3]);
 /// // Expression mode
 /// nbt_list_call_uniform!(
 ///     // may be any expression resulting in an NbtList or a borrowed form of it.
 ///     &mut nbt_list,
-///     content,
-///     content.push(Default::default()),
-///     panic!("Cannot push default to an empty list")
+///     // Runs for every variant (except End)
+///     (content) => content.push(Default::default()),
+///     // case for NbtList::End (should be the default operation)
+///     () => panic!("Cannot push default to an empty list")
 /// );
 /// assert_eq!(nbt_list, NbtList::Short(vec![1,2,3,0]));
 ///
 /// // Method mode
 /// // (note that this particular use case is already supported via NbtList::len)
 /// assert_eq!(
-///     nbt_list_call_uniform!((nbt_list.len()), 0),
+///     // calls Vec::len() on the contents or returns 0 if NbtList::End
+///     nbt_list_call_uniform!(((&nbt_list).len()) | 0),
 ///     4
 /// );
+/// 
+/// // Free mode
+/// let sum = nbt_list_call_uniform!(
+///     (&nbt_list) {
+///         (*AnyNumber)(contents) => {
+///             let mut iter = contents.iter().copied();
+///             let mut sum = iter.next().unwrap_or_default();
+///             for x in iter {
+///                 sum += x;
+///             }
+///             sum.into_tag()
+///         },
+///         (String)(contents) => {
+///             let mut s = String::new();
+///             s.extend(contents.iter().map(|s| s as &str));
+///             s.into_tag()
+///         },
+///         x => panic!("Can't sum a non-number, non-string type")
+///     }
+/// );
+/// assert_eq!(sum, NbtTag::Short(6))
 /// ```
 #[macro_export]
 macro_rules! nbt_list_call_uniform {
-    ($self:expr,$content:ident, $expression:expr, $end_case:expr) => {
-        {
-            match $self {
-                // Manual reference for each value to avoid namespace pollution when using the macro
-                // If we used a "use" statement for this, $expression and $end_case would inherit that context,
-                // potentially causing undesirable type collisions
-                $crate::NbtList::End => $end_case,
-                $crate::NbtList::Byte($content) => $expression,
-                $crate::NbtList::Short($content) => $expression,
-                $crate::NbtList::Int($content) => $expression,
-                $crate::NbtList::Long($content) => $expression,
-                $crate::NbtList::Float($content) => $expression,
-                $crate::NbtList::Double($content) => $expression,
-                $crate::NbtList::ByteArray($content) => $expression,
-                $crate::NbtList::String($content) => $expression,
-                $crate::NbtList::List($content) => $expression,
-                $crate::NbtList::Compound($content) => $expression,
-                $crate::NbtList::IntArray($content) => $expression,
-                $crate::NbtList::LongArray($content) => $expression,
+    (($self:expr) {
+        $(($($variants:tt)*)($content:pat) => $expression:expr),+
+        $(,$wildcard_content:ident => $wildcard_expression:expr)?
+        $(,() => $end_case:expr)?
+    }) => {
+        nbt_list_call_uniform!(
+            @inner
+            {
+                $self
+                $(,$wildcard_content => $wildcard_expression)?
+                $(,() => $end_case)?
             }
+            [$(
+                (
+                    [$($variants)*]
+                    $content => $expression
+                )
+            )+]
+        )
+    };
+    ($self:expr, ($content:ident) => $expression:expr, () => $end_case:expr) => {
+        nbt_list_call_uniform!(($self) {
+            (*AnyNumber|*AnyArray|String|List|Compound)($content) => $expression,
+            () => $end_case
+        })
+    };
+    ((($self:expr).$($method:tt)+) | $end_case:expr) => {
+        nbt_list_call_uniform!(
+            $self,
+            (x) => x.$($method)*,
+            () => $end_case
+        )
+    };
+    (($self:ident.$($method:tt)+) | $end_case:expr) => {
+        nbt_list_call_uniform!((($self).$($method)+) | $end_case)
+    };
+
+    // === TT Muncher ===
+    // == Entrypoint ==
+    (@inner
+        {$($meta:tt)*}
+        [
+            $(($($token:tt)*))*
+        ]
+    ) => {
+        nbt_list_call_uniform!(
+            @munch
+            {$($meta)*}
+            []
+            []
+            [$(($($token)*)),*]
+        )
+    };
+    // == Intialise layer 1 and prepare layer 0 ==
+    (@munch
+        {$($meta:tt)*}
+        [$($layer0_state:tt)*]
+        []
+        [([$($next_target:tt)+] $($extra:tt)*)$(,$(($($remainder:tt)*)),+)?]
+    ) => {
+        nbt_list_call_uniform!(
+            @munch
+            {$($meta)*}
+            [[[] $($extra)*] $($layer0_state)*]
+            [$($next_target)+]
+            [$($(($($remainder)*)),+)?]
+        )
+    };
+
+    // == Munch on layer 1 ==
+    // Add plain element to first in layer 0
+    (@munch
+        {$($meta:tt)*}
+        [[[$($elements:tt)*] $($extra:tt)*] $([$($prior_expansions:tt)*])*]
+        [$new_plain:ident$(|$($remainder:tt)+)?]
+        [$($future:tt)*]
+    ) => {
+        nbt_list_call_uniform!(@munch
+            {$($meta)*}
+            [[[$($elements)* $new_plain] $($extra)*] $([$($prior_expansions)*])*]
+            [$($($remainder)+)?]
+            [$($future)*]
+        )
+    };
+    // = Expansions =
+    // Add AnyFloat expansion to first in layer 0
+    (@munch
+        {$($meta:tt)*}
+        [[[$($elements:tt)*] $($extra:tt)*] $([$($prior_expansions:tt)*])*]
+        [*AnyFloat$(|$($remainder:tt)+)?]
+        [$($future:tt)*]
+    ) => {
+        nbt_list_call_uniform!(@munch
+            {$($meta)*}
+            [[[$($elements)* Float Double] $($extra)*] $([$($prior_expansions)*])*]
+            [$($($remainder)+)?]
+            [$($future)*]
+        )
+    };
+    (@munch
+        {$($meta:tt)*}
+        [[[$($elements:tt)*] $($extra:tt)*] $([$($prior_expansions:tt)*])*]
+        [*AnyInteger$(|$($remainder:tt)+)?]
+        [$($future:tt)*]
+    ) => {
+        nbt_list_call_uniform!(@munch
+            {$($meta)*}
+            [[[$($elements)* Byte Short Int Long] $($extra)*] $([$($prior_expansions)*])*]
+            [$($($remainder)+)?]
+            [$($future)*]
+        )
+    };
+    (@munch
+        {$($meta:tt)*}
+        [[[$($elements:tt)*] $($extra:tt)*] $([$($prior_expansions:tt)*])*]
+        [*AnyNumber$(|$($remainder:tt)+)?]
+        [$($future:tt)*]
+    ) => {
+        nbt_list_call_uniform!(@munch
+            {$($meta)*}
+            [[[$($elements)*] $($extra)*] $([$($prior_expansions)*])*]
+            [*AnyFloat|*AnyInteger$(|$($remainder)+)?]
+            [$($future)*]
+        )
+    };
+    (@munch
+        {$($meta:tt)*}
+        [[[$($elements:tt)*] $($extra:tt)*] $([$($prior_expansions:tt)*])*]
+        [*AnyArray$(|$($remainder:tt)+)?]
+        [$($future:tt)*]
+    ) => {
+        nbt_list_call_uniform!(@munch
+            {$($meta)*}
+            [[[$($elements)* ByteArray IntArray LongArray] $($extra)*] $([$($prior_expansions)*])*]
+            [$($($remainder)+)?]
+            [$($future)*]
+        )
+    };
+    // == Invert and process result ==
+    // Swap order
+    (@munch
+        {$($meta:tt)*}
+        [$($inverted_result:tt)*]
+        []
+        []
+    ) => {
+        nbt_list_call_uniform!(@invert
+            {$($meta)*}
+            []
+            [$($inverted_result)*]
+        )
+    };
+    (@invert
+        {$($meta:tt)*}
+        [$($output:tt)*]
+        [[$($element:tt)*] $([$($input:tt)*])*]
+    ) => {
+        nbt_list_call_uniform!(@invert
+            {$($meta)*}
+            [[$($element)*] $($output)*]
+            [$([$($input)*])*]
+        )
+    };
+    // Final macro call
+    (@invert
+        {
+            $self:expr
+            $(,$wildcard_content:ident => $wildcard_expression:expr)?
+            $(,() => $end_case:expr)?
         }
-    };
-    (($self:ident.$($method:tt)+), $end_case:expr) => {
-        nbt_list_call_uniform!($self,x, x.$($method)*, $end_case)
-    };
+        [$(
+            [
+                [$($variant:ident)*]
+                $content:pat => $expression:expr
+            ]
+        )*]
+        []
+    ) => {
+        match $self {
+            $($(
+                $crate::NbtList::$variant($content) => $expression
+            ),*),*
+            $(,$crate::NbtList::End => $end_case)?
+            $(,$wildcard_content => $wildcard_expression)?
+        }
+    }
 }
 
 #[derive(Default, Clone, Debug, PartialEq, From, TryInto)]
 #[try_into(owned, ref, ref_mut)]
 #[repr(u8)]
 pub enum NbtList {
-    #[default] #[try_into(ignore)]
+    #[default]
+    #[try_into(ignore)]
     End = END_ID,
     Byte(Vec<i8>) = BYTE_ID,
     Short(Vec<i16>) = SHORT_ID,
@@ -118,14 +312,11 @@ impl NbtList {
     }
 
     pub fn get(&self, index: usize) -> Option<&dyn NbtCompatible> {
-        nbt_list_call_uniform!((self.get(index).map(|x| x as &dyn NbtCompatible)), None)
+        nbt_list_call_uniform!((self.get(index).map(|x| x as &dyn NbtCompatible)) | None)
     }
 
     pub fn get_mut(&mut self, index: usize) -> Option<&mut dyn NbtCompatible> {
-        nbt_list_call_uniform!(
-            (self.get_mut(index).map(|x| x as &mut dyn NbtCompatible)),
-            None
-        )
+        nbt_list_call_uniform!((self.get_mut(index).map(|x| x as &mut dyn NbtCompatible)) | None)
     }
 
     pub fn iter(&self) -> Iter<'_> {
@@ -144,14 +335,13 @@ impl NbtList {
     pub fn into_wrapped(self) -> Vec<NbtCompound> {
         nbt_list_call_uniform!(
             self,
-            content,
-            content
+            (content) => content
                 .into_iter()
                 .map(|element| NbtCompound {
                     child_tags: vec![(String::new(), element.into_tag())]
                 })
                 .collect(),
-            vec![]
+            () => vec![]
         )
     }
 
@@ -220,16 +410,14 @@ impl Index<usize> for NbtList {
 
     fn index(&self, index: usize) -> &Self::Output {
         nbt_list_call_uniform!(
-            (self.index(index)),
-            panic!("Index out of bounds for empty list. Index {index}")
+            (self.index(index)) | panic!("Index out of bounds for empty list. Index {index}")
         )
     }
 }
 impl IndexMut<usize> for NbtList {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         nbt_list_call_uniform!(
-            (self.index_mut(index)),
-            panic!("Index out of bounds for empty list. Index {index}")
+            (self.index_mut(index)) | panic!("Index out of bounds for empty list. Index {index}")
         )
     }
 }
@@ -311,10 +499,14 @@ impl PrivateNbtCompatible for NbtList {
     where
         Self: Sized,
     {
-        nbt_list_call_uniform!(self, content, NbtList::ser_list_helper(content, bytes), {
-            bytes.put_u8(ids::END_ID);
-            bytes.put_i32(0);
-        })
+        nbt_list_call_uniform!(
+            self,
+            (content) => NbtList::ser_list_helper(content, bytes),
+            () => {
+                bytes.put_u8(ids::END_ID);
+                bytes.put_i32(0);
+            }
+        )
     }
 
     fn write_snbt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
