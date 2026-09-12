@@ -193,7 +193,7 @@ impl Serialize for NbtList {
             LongArray(x) => helper_macro!(x),
             List(x) => helper_macro!(x),
             Compound(x) => helper_macro!(x),
-            ByteArray(x) => helper_macro!(x, (ser, item, ser.serialize_element(&item as &[u8]))),
+            ByteArray(x) => helper_macro!(x, (ser, item, ser.serialize_element(item as &[u8]))),
             End => serializer.serialize_seq(Some(0))?.end(),
         }
     }

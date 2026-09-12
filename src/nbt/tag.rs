@@ -287,7 +287,7 @@ impl NbtTag {
 
     /// Returns a [Some] with a reference to a dyn [NbtCompatible],
     /// if this tag is not [NbtTag::End], else [None].
-    /// 
+    ///
     /// See also: [NbtTag::as_nbt_compatible_mut]
     pub fn as_nbt_compatible(&self) -> Option<&dyn NbtCompatible> {
         Some(call_uniform!((self), return None))
@@ -295,7 +295,7 @@ impl NbtTag {
 
     /// Returns a [Some] with a mutable reference to a dyn [NbtCompatible],
     /// if this tag is not [NbtTag::End], else [None].
-    /// 
+    ///
     /// See also: [NbtTag::as_nbt_compatible]
     pub fn as_nbt_compatible_mut(&mut self) -> Option<&mut dyn NbtCompatible> {
         Some(call_uniform!((self), return None))

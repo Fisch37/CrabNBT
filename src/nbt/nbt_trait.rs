@@ -9,7 +9,7 @@ use crate::{
         list::NbtList,
         utils::{escape_string_value, get_nbt_string, ids::*, read_array, write_listlike},
     },
-    NbtCompound, NbtTag
+    NbtCompound, NbtTag,
 };
 
 /// Implements behaviour for nbt-datatypes that should not be exposed outside the library.
@@ -57,7 +57,7 @@ impl dyn NbtCompatible {
     }
 
     pub fn as_concrete_mut<T: NbtCompatible>(&mut self) -> Option<&mut T> {
-       self.as_any_mut().downcast_mut()
+        self.as_any_mut().downcast_mut()
     }
 }
 
