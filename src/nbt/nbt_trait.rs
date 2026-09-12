@@ -47,6 +47,7 @@ pub trait NbtCompatible: PrivateNbtCompatible {
 impl dyn NbtCompatible {
     // This method cannot be named "snbt" due to rustc falsely claiming
     // method ambiguity with NbtCompatible::snbt, which requires Self: Sized
+    // (we also can't remove that bound because the return value uses Self)
     pub fn snbt_dyn(&self) -> SnbtDisplay<'_, dyn NbtCompatible> {
         SnbtDisplay(self)
     }

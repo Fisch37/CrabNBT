@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::error::Error;
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BufMut};
 
 use simd_cesu8::decode;
 

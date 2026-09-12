@@ -53,43 +53,28 @@ use crate::{
 macro_rules! nbt_list_call_uniform {
     ($self:expr,$content:ident, $expression:expr, $end_case:expr) => {
         {
-            use $crate::NbtList::*;
             match $self {
-                End => $end_case,
-                Byte($content) => $expression,
-                Short($content) => $expression,
-                Int($content) => $expression,
-                Long($content) => $expression,
-                Float($content) => $expression,
-                Double($content) => $expression,
-                ByteArray($content) => $expression,
-                String($content) => $expression,
-                List($content) => $expression,
-                Compound($content) => $expression,
-                IntArray($content) => $expression,
-                LongArray($content) => $expression,
+                // Manual reference for each value to avoid namespace pollution when using the macro
+                // If we used a "use" statement for this, $expression and $end_case would inherit that context,
+                // potentially causing undesirable type collisions
+                $crate::NbtList::End => $end_case,
+                $crate::NbtList::Byte($content) => $expression,
+                $crate::NbtList::Short($content) => $expression,
+                $crate::NbtList::Int($content) => $expression,
+                $crate::NbtList::Long($content) => $expression,
+                $crate::NbtList::Float($content) => $expression,
+                $crate::NbtList::Double($content) => $expression,
+                $crate::NbtList::ByteArray($content) => $expression,
+                $crate::NbtList::String($content) => $expression,
+                $crate::NbtList::List($content) => $expression,
+                $crate::NbtList::Compound($content) => $expression,
+                $crate::NbtList::IntArray($content) => $expression,
+                $crate::NbtList::LongArray($content) => $expression,
             }
         }
     };
-    (($self:ident.$($expression:tt)+), $end_case:expr) => {
-        {
-            use $crate::NbtList::*;
-            match $self {
-                End => $end_case,
-                Byte(x) => x.$($expression)*,
-                Short(x) => x.$($expression)*,
-                Int(x) => x.$($expression)*,
-                Long(x) => x.$($expression)*,
-                Float(x) => x.$($expression)*,
-                Double(x) => x.$($expression)*,
-                ByteArray(x) => x.$($expression)*,
-                String(x) => x.$($expression)*,
-                List(x) => x.$($expression)*,
-                Compound(x) => x.$($expression)*,
-                IntArray(x) => x.$($expression)*,
-                LongArray(x) => x.$($expression)*,
-            }
-        }
+    (($self:ident.$($method:tt)+), $end_case:expr) => {
+        nbt_list_call_uniform!($self,x, x.$($method)*, $end_case)
     };
 }
 
