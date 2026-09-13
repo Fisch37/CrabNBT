@@ -1,5 +1,8 @@
-use crate::nbt::snbt::de::utils::{impl_FromStr_through_FromVisitor, FromVisitor, StrVisitor, consume_whitespace, expect_char, read_string};
 use crate::nbt::error::SnbtDeserialisationError;
+use crate::nbt::snbt::de::utils::{
+    consume_whitespace, expect_char, impl_FromStr_through_FromVisitor, read_string, FromVisitor,
+    StrVisitor,
+};
 use crate::nbt::utils::{escape_name, join_formatted};
 use crate::{error::Error, Nbt};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
@@ -195,7 +198,7 @@ impl FromVisitor for NbtCompound {
             }
             consume_whitespace(visitor);
             let name = read_string(visitor)?;
-            
+
             consume_whitespace(visitor);
             expect_char(visitor, ':', ":")?;
             consume_whitespace(visitor);

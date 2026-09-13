@@ -1,11 +1,14 @@
-//! 
-//! 
+//!
+//!
 //! -?((0b(0|1)+|0x[0-9a-fA-F]+)|0(b|s|i|l|f|d|B|S|I|L|F|D)?|[1-9][0-9]*(b|s|i|l|f|d|B|S|I|L|F|D)?|[1-9][0-9]*.[0-9]*(f|d|F|D)?)
-
 
 use std::{fmt::Debug, str::FromStr};
 
-use crate::nbt::{NbtTag, error::SnbtDeserialisationError, snbt::de::utils::{ReaderAction, StrVisitor, expect_str, read_slice_while_skipping}};
+use crate::nbt::{
+    error::SnbtDeserialisationError,
+    snbt::de::utils::{expect_str, read_slice_while_skipping, ReaderAction, StrVisitor},
+    NbtTag,
+};
 
 #[derive(Clone, Copy, Debug)]
 enum NumberType {
@@ -14,7 +17,7 @@ enum NumberType {
     Integer,
     Long,
     Float,
-    Double
+    Double,
 }
 #[derive(Clone, Copy, Debug)]
 enum Signedness {
@@ -27,20 +30,20 @@ enum Signedness {
     // We could use Signed as a default, but this would be less readable than Unspecified lit.
     // One additional variant costs no performance (assuming jump tables)
     // and is unlikely to cause any spacial costs (e.g. Option still has 253 different values)
-    Unspecified
+    Unspecified,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Radix {
     Binary,
     Decimal,
-    Hexadecimal
+    Hexadecimal,
 }
 impl Radix {
     pub const fn check_character(self, c: char) -> bool {
         match self {
             Self::Binary => c == '0' || c == '1',
             Self::Decimal => c.is_ascii_digit() || c == '.' || c == '-' || c == 'e' || c == 'E',
-            Self::Hexadecimal => c.is_ascii_hexdigit()
+            Self::Hexadecimal => c.is_ascii_hexdigit(),
         }
     }
 
@@ -48,17 +51,17 @@ impl Radix {
         match self {
             Self::Binary => 2,
             Self::Decimal => 10,
-            Self::Hexadecimal => 16
+            Self::Hexadecimal => 16,
         }
     }
 }
 
 /// Generates code to decode the signedness and number type using multi-layered match-statements.
-/// 
+///
 /// Number suffixes are deeply layered, but often vary in minutiae depending on previous branches.
 /// Creating a runtime-state for this turned out to require function pointer for basically every
 /// action.
-/// 
+///
 /// - `match_target` may run multiple times so be sure that is is sound to do so.
 /// - `error_unsignable` will run at most once and do so whenever a character would have been valid
 ///   before a signedness suffix, but a signedness suffix was already processed, so it isn't.
@@ -160,7 +163,9 @@ macro_rules! parse_number_suffix {
     };
 }
 
-pub fn read_number_or_numboid_const(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationError> {
+pub fn read_number_or_numboid_const(
+    visitor: &mut StrVisitor,
+) -> Result<NbtTag, SnbtDeserialisationError> {
     if expect_str(visitor, "true").is_ok() {
         Ok(NbtTag::Byte(1))
     } else if expect_str(visitor, "false").is_ok() {
@@ -189,8 +194,8 @@ fn read_number(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationEr
                 'b' => radix = Radix::Binary,
                 'x' => radix = Radix::Hexadecimal,
                 // Decimal case
-                c if c.is_ascii_digit() || c == '.' => { },
-                _ => return ReaderAction::Abort
+                c if c.is_ascii_digit() || c == '.' => {}
+                _ => return ReaderAction::Abort,
             }
             can_have_radix_prefix = false;
             return ReaderAction::Accept;
@@ -200,21 +205,21 @@ fn read_number(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationEr
             '.' => {
                 is_float_only = true;
                 ReaderAction::Accept
-            },
+            }
             'e' | 'E' if radix != Radix::Hexadecimal => {
                 is_float_only = true;
                 ReaderAction::Accept
             }
             '_' => ReaderAction::Skip,
             c if radix.check_character(c) => ReaderAction::Accept,
-            _ => ReaderAction::Abort
+            _ => ReaderAction::Abort,
         }
     });
     // match &num_str {
     //     Cow::Borrowed(b) => println!("Borrowed({b})"),
     //     Cow::Owned(o) => println!("Owned({o})")
     // }
-    
+
     let (mut signedness, mut number_type) = parse_number_suffix! {
         match visitor.next();
         all,
@@ -225,7 +230,7 @@ fn read_number(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationEr
         on_false_signedness = |c: Option<char>| if c.is_some() { visitor.previous(); },
         else read_c => {
             // when visitor.next() returns None, it does not advance further, therefore previous()
-            // would move 
+            // would move
             if read_c.is_some() {
                 // The character might be a "," or similar.
                 // Higher parsers can worry about that character, I'm just creating numbers.
@@ -239,19 +244,22 @@ fn read_number(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationEr
             }
         }
     };
-    
+
     // from_str_radix does not expect prefixes (that is "0x" and "0b")
     let without_radix_prefix = match radix {
-        Radix::Binary => if num_str.len() == 2 {
-            // "0b" looks like the start of a binary number to the reader,
-            // so we must check and perform this correction.
-            (radix, signedness, number_type) = (Radix::Decimal, Signedness::Unspecified, NumberType::Byte);
-            "0"
-        } else {
-            &num_str[2..]
-        },
+        Radix::Binary => {
+            if num_str.len() == 2 {
+                // "0b" looks like the start of a binary number to the reader,
+                // so we must check and perform this correction.
+                (radix, signedness, number_type) =
+                    (Radix::Decimal, Signedness::Unspecified, NumberType::Byte);
+                "0"
+            } else {
+                &num_str[2..]
+            }
+        }
         Radix::Hexadecimal => &num_str[2..],
-        Radix::Decimal => &num_str
+        Radix::Decimal => &num_str,
     };
     match get_number_parser(radix, signedness, number_type) {
         Some(parser) => {
@@ -263,24 +271,22 @@ fn read_number(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationEr
 
 macro_rules! wrap_float {
     ($mapper:expr) => {
-        (
-            |s| FromStr::from_str(s)
+        (|s| {
+            FromStr::from_str(s)
                 .map($mapper)
                 .map_err(|e| todo!("better error structures {e}"))
-        ) as for<'a> fn(&'a _) -> _
+        }) as for<'a> fn(&'a _) -> _
     };
 }
 
 macro_rules! wrap_int {
     ($radix:ident, $source_type:ty, $dest_type:ty) => {
-        (
-            |s| <$source_type>::from_str_radix(
-                    s,
-                    Radix::$radix.get_radix_number()
-                ).map(|source| source as $dest_type)
+        (|s| {
+            <$source_type>::from_str_radix(s, Radix::$radix.get_radix_number())
+                .map(|source| source as $dest_type)
                 .map(NbtTag::from)
                 .map_err(|e| todo!("better error structures {e}"))
-        ) as for<'a> fn(&'a _) -> _
+        }) as for<'a> fn(&'a _) -> _
     };
     ($radix:ident, $source_type:ty) => {
         wrap_int!($radix, $source_type, $source_type)
@@ -288,14 +294,6 @@ macro_rules! wrap_int {
 }
 
 macro_rules! find_parser_matching {
-    // TODO: Implement existing combinations and add remaining ones.
-    //  Every radix can appear with every signedness for every (integer) number type.
-    //  This makes 3*2*4 = 24 possible combinations.
-    //  Coding this all by hand would be silly, therefore I recommend making use of macros
-    //  or clever generics. Consider that from_str_radix exists for _every_ integral type,
-    //  so maybe some kind of Trait to make use of this would be a good solution.
-    //  Consider adding the num_traits dependency for this purpose, as it already has a trait
-    //  for this problem (https://docs.rs/num-traits/latest/num_traits/trait.Num.html#tymethod.from_str_radix).
     ($target:expr) => {
         find_parser_matching!(
             $target,
@@ -326,7 +324,7 @@ macro_rules! find_parser_matching {
                 )
             }
         }
-        
+
         match $target {
             $((Radix::$radix, sign, NumberType::Byte) => foo!($radix, sign, u8, i8),)+
             $((Radix::$radix, sign, NumberType::Short) => foo!($radix, sign, u16, i16),)+
@@ -338,25 +336,16 @@ macro_rules! find_parser_matching {
     }};
 }
 
+type NumberParser = Option<fn(&str) -> Result<NbtTag, SnbtDeserialisationError>>;
 /// Returns a function to correctly parse any given
 /// combination of [`Radix`], [`Signedness`], and [`NumberType`],
 /// if one exists, otherwise [`None`].
 const fn get_number_parser(
     radix: Radix,
     signedness: Signedness,
-    number_type: NumberType
-) -> Option<fn(&str) -> Result<NbtTag, SnbtDeserialisationError>> {
+    number_type: NumberType,
+) -> NumberParser {
     find_parser_matching!((radix, signedness, number_type))
-}
-
-/// Whether this character may contained anywhere within a number sequence,
-/// including special number formats such as hexadecimal (0xff), binary (0b101),
-/// or exponential (1.0E-3).
-fn is_number_character(c: char) -> bool {
-    // important! Keep consistent with [`may_start_number`]
-    // see https://minecraft.wiki/w/NBT_format#Number_format
-    // exponential included, because E and e are both hexdigits.
-    c.is_ascii_hexdigit() || c == '.'|| c == '-' || c == '_' || c == 'x'
 }
 
 pub fn may_start_number(c: char) -> bool {

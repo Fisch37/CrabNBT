@@ -6,7 +6,7 @@ use crate::nbt::snbt::de::utils::StrVisitor;
 pub struct SnbtDeserialisationError {
     pub index: usize,
     pub offending_area: String,
-    pub expected: &'static str
+    pub expected: &'static str,
 }
 const MAX_OFFENSE_INFO_LENGTH: usize = 12;
 impl SnbtDeserialisationError {
@@ -20,12 +20,11 @@ impl SnbtDeserialisationError {
             .collect::<Vec<char>>()
             .iter()
             .rev()
-            .collect()
-            ;
+            .collect();
         SnbtDeserialisationError {
             index: visitor.get_position(),
             offending_area,
-            expected
+            expected,
         }
     }
 }
@@ -34,10 +33,8 @@ impl Display for SnbtDeserialisationError {
         write!(
             f,
             "Expected {} at position {}: {} <--[HERE]",
-            self.expected,
-            self.index,
-            self.offending_area
+            self.expected, self.index, self.offending_area
         )
     }
 }
-impl Error for SnbtDeserialisationError { }
+impl Error for SnbtDeserialisationError {}
