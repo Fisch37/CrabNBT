@@ -1,3 +1,4 @@
+use std::num::ParseIntError;
 use std::{borrow::Cow, fmt::Debug, iter::FusedIterator, result::Result as StdResult};
 
 use crate::nbt::error::SnbtDeserialisationError;
@@ -52,13 +53,39 @@ impl<'a> StrVisitor<'a> {
     /// It is guaranteed that the result of this method
     /// will be the same as the next result of [`Self::next`]
     pub fn peek(&self) -> Option<char> {
-        self.as_str().chars().next()
+        self.peek_nth(0)
+    }
+
+    /// Returns the 0-indexed nth unvisited char in the visitor without advancing.
+    pub fn peek_nth(&self, n: usize) -> Option<char> {
+        self.as_str().chars().nth(n)
     }
 
     /// Moves back to the last read character.
     pub fn previous(&mut self) -> Option<char> {
         self.position = previous_char_boundary(self.slice, self.position);
         self.peek()
+    }
+
+    /// Returns the previous char in the visitor without moving back.
+    ///
+    /// It is guaranteed that the result of this method
+    /// will be the same as the next result of [`Self::previous`]
+    pub fn peek_previous(&mut self) -> Option<char> {
+        self.peek_nth_previous(0)
+    }
+
+    /// Returns the 0-indexed nth previous char in the visitor without advancing.
+    pub fn peek_nth_previous(&self, n: usize) -> Option<char> {
+        let mut pos = self.position;
+        for _ in 0..=n {
+            if pos == 0 {
+                return None;
+            }
+
+            pos = previous_char_boundary(self.slice, pos);
+        }
+        self.get_slice()[pos..].chars().next()
     }
 
     pub fn next_if<P: FnOnce(char) -> bool>(&mut self, predicate: P) -> Option<char> {
@@ -214,6 +241,54 @@ pub(crate) fn expect_str(visitor: &mut StrVisitor, expected: &'static str) -> Re
     } else {
         Err(SnbtDeserialisationError::from_visitor(visitor, expected))
     }
+}
+
+/// Returns [`Ok`] only if the visitor continues with a string matching `expected`, ignoring case.
+/// If [`Ok`] is returned the visitor will be advanced until exactly after that substring.
+///
+/// If the visitor does not continue with `expected`,
+/// returns an [`Err`] and the visitor is not advanced at all.
+pub(crate) fn expect_str_ignore_case(
+    visitor: &mut StrVisitor,
+    expected: &'static str,
+) -> Result<()> {
+    let s = visitor.as_str();
+    if s.get(..expected.len())
+        .is_some_and(|start| start.eq_ignore_ascii_case(expected))
+    {
+        visitor.position += expected.len();
+        Ok(())
+    } else {
+        Err(SnbtDeserialisationError::from_visitor(visitor, expected))
+    }
+}
+
+pub(crate) fn expect_any_literal(
+    visitor: &mut StrVisitor,
+    expected: &mut [(&mut dyn Iterator<Item = char>, fn())],
+) -> usize {
+    let matches = 0usize;
+    let mut possible_values = vec![false; expected.len()];
+    for c in visitor {
+        for ((seq, fun), is_possible) in expected
+            .iter_mut()
+            .zip(possible_values.iter_mut())
+            .filter(|(_, b)| **b)
+        {
+            match seq.next() {
+                None => {
+                    fun();
+                    *is_possible = false;
+                }
+                Some(x) => {
+                    if x != c {
+                        *is_possible = false
+                    }
+                }
+            }
+        }
+    }
+    matches
 }
 
 pub(crate) fn expect_condition<P: FnOnce(char) -> bool>(
@@ -409,15 +484,14 @@ fn parse_escape_sequence(visitor: &mut StrVisitor) -> Result<char> {
     })
 }
 
-fn parse_hexadecimal_as_char<N: TryInto<char, Error = E2>, E2, E, M>(
+fn parse_hexadecimal_as_char<N: TryInto<char, Error = E2>, E2, M>(
     visitor: &mut StrVisitor,
     parser: M,
     num_expected: usize,
 ) -> Result<char>
 where
-    M: FnOnce(&str, u32) -> StdResult<N, E>,
+    M: FnOnce(&str, u32) -> StdResult<N, ParseIntError>,
     // TODO: Remove this once better error structures is done
-    E: Debug,
     E2: Debug,
 {
     let (hex, chars) = visitor.next_n(num_expected);
@@ -428,10 +502,10 @@ where
             "C hexadecimal characters",
         ))
     } else {
-        Ok(parser(hex, 16)
-            .expect("todo: better error structures")
+        Ok(parser(hex, 16)?
             .try_into()
             .expect("todo: better error structures"))
+        ))
     }
 }
 

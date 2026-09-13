@@ -23,13 +23,16 @@ fn wrap(tag: NbtTag) -> NbtTag {
 #[test]
 fn nbt_tag() {
     assert_eq!(tag_helper("Hello"), NbtTag::String("Hello".to_owned()));
+    assert_parse!(r#""true""#, NbtTag::String("true".to_string()));
+    assert_parse!(r#""false""#, NbtTag::String("false".to_string()));
 }
 
 #[test]
 fn nbt_list() {
     assert_eq!(tag_helper("[]"), NbtTag::List(vec![]));
+    assert!("[,]".parse::<NbtTag>().is_err());
     assert_eq!(
-        tag_helper("[A,B,C ,D,      E,    F    ,   G    ]"),
+        tag_helper("[A,B,C ,D,      E,    F    ,   G   , ]"),
         NbtTag::List(
             "ABCDEFG"
                 .chars()
@@ -38,7 +41,7 @@ fn nbt_list() {
         )
     );
     assert_eq!(
-        tag_helper("[A,[],B,{}]"),
+        tag_helper("[A,[],B,{},]"),
         NbtTag::List(vec![
             wrap(NbtTag::String("A".to_string())),
             wrap(NbtTag::List(vec![])),
@@ -63,7 +66,35 @@ fn nbt_uuids() {
     assert_parse!(
         "uuid(\"7c3be0c5-6abd-4fa5-b3f1-0634daa981df\")",
         NbtTag::IntArray(vec![2084298949, 1790791589, -1276049868, -626425377])
-    )
+    );
+    assert_parse!(
+        "uuid(\"7c3be0c5-6abd-4fa5-b3f1-634daa981df\")",
+        NbtTag::IntArray(vec![2084298949, 1790791589, -1276049868, -626425377])
+    );
+    assert_parse!(
+        "uuid(\"7-c3be0c5-6abd4fa5b3f10634-daa981d-f\")",
+        NbtTag::IntArray(vec![7, -523958732, -1742929920, 15])
+    );
+    assert_parse!(
+        "uuid(\"7-c-3-be0c56abd4fa5-b3f10634daa981df\")",
+        NbtTag::IntArray(vec![7, 786435, 1336215092, -626425377])
+    );
+
+    assert!("uuid(7c3be0c5-6abd-4fa5-b3f1-0634daa981df)"
+        .parse::<NbtTag>()
+        .is_err());
+    assert!("uuid(\"7c3be0c56abd4fa5b3f10634daa981df\")"
+        .parse::<NbtTag>()
+        .is_err());
+    assert!("uuid(\"7c3be0c5-6abd-4fa5-b3f1-0634-daa981df\")"
+        .parse::<NbtTag>()
+        .is_err());
+    assert!("uuid(\"-7c3be0c56abd-4fa5b3f1-0634daa9-81df\")"
+        .parse::<NbtTag>()
+        .is_err());
+    assert!("uuid(\"7--c3be0c56-abd4fa5b-3f10634d-aa981df\")"
+        .parse::<NbtTag>()
+        .is_err());
 }
 
 #[test]
@@ -74,13 +105,21 @@ fn nbt_compound() {
             "components": []
         })
         .into()
-    )
+    );
+
+    assert_parse!("{}", NbtTag::Compound(NbtCompound::new()));
+    assert!("{,}".parse::<NbtTag>().is_err());
+    assert_parse!(
+        "{\"a\":1 , }",
+        NbtTag::Compound(NbtCompound::from_iter([("a".into(), 1.into())]))
+    );
 }
 
 #[test]
 fn nbt_numbers() {
     assert_parse!("1e7f", NbtTag::Float(1e7));
     assert_parse!("1e7", NbtTag::Double(1e7));
+    assert_parse!("0.0_4E10f", NbtTag::Float(0.0_4E10));
     assert_parse!("10", NbtTag::Int(10));
     assert_parse!("-25", NbtTag::Int(-25));
     assert_parse!("5b", NbtTag::Byte(5));
@@ -91,6 +130,9 @@ fn nbt_numbers() {
 
     assert_parse!("255UB", NbtTag::Byte(-1));
     assert_parse!("10SB", NbtTag::Byte(10));
+    assert_parse!("0b0b", NbtTag::Byte(0));
+
+    assert_parse!("0x1f", NbtTag::Int(0x1f));
 
     // assert_parse!("0x1f", NbtTag::Int(0x1f));
 
@@ -98,8 +140,41 @@ fn nbt_numbers() {
     const FALSE: NbtTag = NbtTag::Byte(0);
     assert_parse!("bool(500)", TRUE);
     assert_parse!("bool(0)", FALSE);
-    assert_parse!("bool(true)", TRUE);
-    assert_parse!("bool(false)", FALSE);
+    assert_parse!("bool(-0.9999999F)", FALSE);
+    assert_parse!("bool(-0.9999999D)", FALSE);
+    assert_parse!("bool(TRuE)", TRUE);
+    assert_parse!("bool(faLSe)", FALSE);
+}
+
+#[test]
+fn nbt_arrays() {
+    assert_parse!("[I;]", NbtTag::IntArray(Vec::new()));
+    assert!("[I;,]".parse::<NbtTag>().is_err());
+    assert_parse!("[I; 0, 1B, 2S, 3I]", NbtTag::IntArray(vec![0, 1, 2, 3]));
+    assert_parse!(
+        "[L; 0, 1B, 2S, 3I, 4L , ]",
+        NbtTag::LongArray(vec![0, 1, 2, 3, 4])
+    );
+    assert_parse!(
+        "[B; 0, 0b1b, 2, 0x3]",
+        NbtTag::ByteArray(vec![0, 1, 2, 3].into())
+    );
+}
+
+#[test]
+fn nbt_fails() {
+    assert!(r#"{"": {}}"#.parse::<NbtTag>().is_err());
+
+    assert!("1a".parse::<NbtTag>().is_err());
+    assert!("0x".parse::<NbtTag>().is_err());
+    assert!("_1E1".parse::<NbtTag>().is_err());
+    assert!("._1E1".parse::<NbtTag>().is_err());
+    assert!("_.1E1".parse::<NbtTag>().is_err());
+    assert!("1_E1".parse::<NbtTag>().is_err());
+    assert!("1E_1".parse::<NbtTag>().is_err());
+    assert!("1E1_".parse::<NbtTag>().is_err());
+    assert!("1E.1".parse::<NbtTag>().is_err());
+    assert!("1E1.".parse::<NbtTag>().is_err());
 }
 
 #[test]

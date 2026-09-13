@@ -2,16 +2,18 @@
 //!
 //! -?((0b(0|1)+|0x[0-9a-fA-F]+)|0(b|s|i|l|f|d|B|S|I|L|F|D)?|[1-9][0-9]*(b|s|i|l|f|d|B|S|I|L|F|D)?|[1-9][0-9]*.[0-9]*(f|d|F|D)?)
 
-use std::{fmt::Debug, str::FromStr};
+use std::{borrow::Cow, fmt::Debug, str::FromStr};
 
 use crate::nbt::{
     error::SnbtDeserialisationError,
-    snbt::de::utils::{expect_str, read_slice_while_skipping, ReaderAction, StrVisitor},
+    snbt::de::utils::{
+        expect_str, expect_str_ignore_case, read_slice_while_skipping, ReaderAction, StrVisitor,
+    },
     NbtTag,
 };
 
-#[derive(Clone, Copy, Debug)]
-enum NumberType {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NumberType {
     Byte,
     Short,
     Integer,
@@ -19,8 +21,8 @@ enum NumberType {
     Float,
     Double,
 }
-#[derive(Clone, Copy, Debug)]
-enum Signedness {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Signedness {
     Signed,
     Unsigned,
     /// No explicit signedness was specified.
@@ -33,7 +35,7 @@ enum Signedness {
     Unspecified,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Radix {
+pub enum Radix {
     Binary,
     Decimal,
     Hexadecimal,
@@ -43,6 +45,14 @@ impl Radix {
         match self {
             Self::Binary => c == '0' || c == '1',
             Self::Decimal => c.is_ascii_digit() || c == '.' || c == '-' || c == 'e' || c == 'E',
+            Self::Hexadecimal => c.is_ascii_hexdigit(),
+        }
+    }
+
+    pub const fn check_digit(self, c: char) -> bool {
+        match self {
+            Self::Binary => c == '0' || c == '1',
+            Self::Decimal => c.is_ascii_digit(),
             Self::Hexadecimal => c.is_ascii_hexdigit(),
         }
     }
@@ -166,16 +176,20 @@ macro_rules! parse_number_suffix {
 pub fn read_number_or_numboid_const(
     visitor: &mut StrVisitor,
 ) -> Result<NbtTag, SnbtDeserialisationError> {
-    if expect_str(visitor, "true").is_ok() {
+    if expect_str_ignore_case(visitor, "true").is_ok() {
         Ok(NbtTag::Byte(1))
-    } else if expect_str(visitor, "false").is_ok() {
+    } else if expect_str_ignore_case(visitor, "false").is_ok() {
         Ok(NbtTag::Byte(0))
     } else {
-        read_number(visitor)
+        read_number(visitor, None, None)
     }
 }
 
-fn read_number(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationError> {
+pub fn read_number(
+    visitor: &mut StrVisitor,
+    default_integer_type: Option<NumberType>,
+    default_float_type: Option<NumberType>,
+) -> Result<NbtTag, SnbtDeserialisationError> {
     // TODO: Check _ implementation. May be underconstrained
     //  (no check for end/beginning of sequence, which may cause bugs)
     let mut is_float_only: bool = false;
@@ -188,37 +202,65 @@ fn read_number(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationEr
     let mut can_have_radix_prefix = visitor.peek().is_some_and(|c: char| c == '0');
     // Radices are defined at the second index, so we have to track this as well
     let mut has_read_once = false;
-    let num_str = read_slice_while_skipping(visitor, |c| {
+    let slice = visitor.as_str();
+    let mut num_end: usize = 0;
+    while let Some(c) = visitor.peek() {
         if has_read_once && can_have_radix_prefix {
             match c {
                 'b' => radix = Radix::Binary,
                 'x' => radix = Radix::Hexadecimal,
                 // Decimal case
                 c if c.is_ascii_digit() || c == '.' => {}
-                _ => return ReaderAction::Abort,
+                _ => break,
             }
             can_have_radix_prefix = false;
-            return ReaderAction::Accept;
+            num_end += 1;
+            visitor.next().unwrap();
+            continue;
         }
         has_read_once = true;
         match c {
             '.' => {
                 is_float_only = true;
-                ReaderAction::Accept
+                num_end += 1;
+                visitor.next().unwrap();
+                continue;
             }
             'e' | 'E' if radix != Radix::Hexadecimal => {
                 is_float_only = true;
-                ReaderAction::Accept
+                num_end += 1;
+                visitor.next().unwrap();
+                continue;
             }
-            '_' => ReaderAction::Skip,
-            c if radix.check_character(c) => ReaderAction::Accept,
-            _ => ReaderAction::Abort,
+            '_' if visitor
+                .peek_previous()
+                .is_some_and(|c| radix.check_digit(c)) =>
+            {
+                visitor.next().unwrap();
+                if visitor.peek().is_some_and(|c| radix.check_digit(c)) {
+                    num_end += 1;
+                    continue;
+                } else {
+                    return Err(SnbtDeserialisationError::from_visitor(
+                        visitor,
+                        "number should come after _",
+                    ));
+                }
+            }
+            c if radix.check_character(c) => {
+                num_end += 1;
+                visitor.next().unwrap();
+                continue;
+            }
+            _ => break,
         }
-    });
-    // match &num_str {
-    //     Cow::Borrowed(b) => println!("Borrowed({b})"),
-    //     Cow::Owned(o) => println!("Owned({o})")
-    // }
+    }
+    let num_str = &slice[..num_end];
+    let num_str = if num_str.contains('_') {
+        Cow::Owned(num_str.replace('_', ""))
+    } else {
+        Cow::Borrowed(num_str)
+    };
 
     let (mut signedness, mut number_type) = parse_number_suffix! {
         match visitor.next();
@@ -238,9 +280,9 @@ fn read_number(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationEr
             }
             if is_float_only {
                 // Unmarked floating-point value defaults to double
-                (Signedness::Unspecified, NumberType::Double)
+                (Signedness::Unspecified, default_float_type.unwrap_or(NumberType::Double))
             } else {
-                (Signedness::Unspecified, NumberType::Integer)
+                (Signedness::Unspecified, default_integer_type.unwrap_or(NumberType::Integer))
             }
         }
     };
@@ -262,10 +304,12 @@ fn read_number(visitor: &mut StrVisitor) -> Result<NbtTag, SnbtDeserialisationEr
         Radix::Decimal => &num_str,
     };
     match get_number_parser(radix, signedness, number_type) {
-        Some(parser) => {
-            parser(without_radix_prefix)
-        },
-        None => todo!("better error structures. Illegal combination of ({radix:?}, {signedness:?}, {number_type:?})")
+        Some(parser) => parser(without_radix_prefix),
+        None => Err(SnbtDeserialisationError::IllegalCombination(
+            radix,
+            signedness,
+            number_type,
+        )),
     }
 }
 
@@ -274,7 +318,7 @@ macro_rules! wrap_float {
         (|s| {
             FromStr::from_str(s)
                 .map($mapper)
-                .map_err(|e| todo!("better error structures {e}"))
+                .map_err(SnbtDeserialisationError::ParseFloatError)
         }) as for<'a> fn(&'a _) -> _
     };
 }
@@ -285,7 +329,7 @@ macro_rules! wrap_int {
             <$source_type>::from_str_radix(s, Radix::$radix.get_radix_number())
                 .map(|source| source as $dest_type)
                 .map(NbtTag::from)
-                .map_err(|e| todo!("better error structures {e}"))
+                .map_err(SnbtDeserialisationError::ParseIntError)
         }) as for<'a> fn(&'a _) -> _
     };
     ($radix:ident, $source_type:ty) => {
@@ -344,8 +388,18 @@ const fn get_number_parser(
     radix: Radix,
     signedness: Signedness,
     number_type: NumberType,
-) -> NumberParser {
+) -> Option<fn(&str) -> Result<NbtTag, SnbtDeserialisationError>> {
     find_parser_matching!((radix, signedness, number_type))
+}
+
+/// Whether this character may contained anywhere within a number sequence,
+/// including special number formats such as hexadecimal (0xff), binary (0b101),
+/// or exponential (1.0E-3).
+fn is_number_character(c: char) -> bool {
+    // important! Keep consistent with [`may_start_number`]
+    // see https://minecraft.wiki/w/NBT_format#Number_format
+    // exponential included, because E and e are both hexdigits.
+    c.is_ascii_hexdigit() || c == '.' || c == '-' || c == '_' || c == 'x'
 }
 
 pub fn may_start_number(c: char) -> bool {
