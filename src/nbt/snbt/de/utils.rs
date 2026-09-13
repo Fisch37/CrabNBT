@@ -505,7 +505,6 @@ where
         Ok(parser(hex, 16)?
             .try_into()
             .expect("todo: better error structures"))
-        ))
     }
 }
 

@@ -6,13 +6,12 @@ use derive_more::From;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::io::Cursor;
 use std::mem::{discriminant, Discriminant};
-use std::str::FromStr;
 
 use crate::nbt::error::SnbtDeserialisationError;
 use crate::nbt::snbt::de::numbers::{may_start_number, read_number_or_numboid_const, NumberType};
 use crate::nbt::snbt::de::utils::{
     consume_whitespace, expect_char, expect_str, expect_str_ignore_case,
-    impl_FromStr_through_FromVisitor, read_quoted_string, read_slice_while, read_string,
+    impl_FromStr_through_FromVisitor, read_quoted_string, read_string,
     FromVisitor, StrVisitor,
 };
 
@@ -463,7 +462,7 @@ fn uuid_from_str(name: &str) -> Result<[i32; 4], SnbtDeserialisationError> {
     Ok([a, b, c, d].map(i32::from_be_bytes))
 }
 
-const LIST_SEPARATOR_MSG: &'static str = ", or ]";
+const LIST_SEPARATOR_MSG: &str = ", or ]";
 /// Reads an SNBT List with correction for heterogeneous lists.
 /// Assumes the opening `[` character has already been consumed.
 fn read_list(visitor: &mut StrVisitor) -> Result<Vec<NbtTag>, SnbtDeserialisationError> {

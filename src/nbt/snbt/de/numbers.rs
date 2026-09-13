@@ -7,7 +7,7 @@ use std::{borrow::Cow, fmt::Debug, str::FromStr};
 use crate::nbt::{
     error::SnbtDeserialisationError,
     snbt::de::utils::{
-        expect_str, expect_str_ignore_case, read_slice_while_skipping, ReaderAction, StrVisitor,
+        expect_str_ignore_case, StrVisitor,
     },
     NbtTag,
 };
@@ -380,7 +380,7 @@ macro_rules! find_parser_matching {
     }};
 }
 
-type NumberParser = Option<fn(&str) -> Result<NbtTag, SnbtDeserialisationError>>;
+type NumberParser = fn(&str) -> Result<NbtTag, SnbtDeserialisationError>;
 /// Returns a function to correctly parse any given
 /// combination of [`Radix`], [`Signedness`], and [`NumberType`],
 /// if one exists, otherwise [`None`].
@@ -388,7 +388,7 @@ const fn get_number_parser(
     radix: Radix,
     signedness: Signedness,
     number_type: NumberType,
-) -> Option<fn(&str) -> Result<NbtTag, SnbtDeserialisationError>> {
+) -> Option<NumberParser> {
     find_parser_matching!((radix, signedness, number_type))
 }
 
