@@ -141,7 +141,7 @@ impl<'a> StrVisitor<'a> {
     }
 
     pub fn get_position(&self) -> usize {
-        return self.position;
+        self.position
     }
 
     pub fn get_slice(&self) -> &'a str {
@@ -226,7 +226,7 @@ pub(crate) fn expect_char(
     expected_char: char,
     expected: &'static str,
 ) -> Result<()> {
-    expect_condition(visitor, &|c| c == expected_char, expected).map(|_| ())
+    expect_condition(visitor, |c| c == expected_char, expected).map(|_| ())
 }
 
 /// Returns [`Ok`] only if the visitor continues with a string matching `expected`.
@@ -291,7 +291,7 @@ pub(crate) fn expect_any_literal(
     matches
 }
 
-pub(crate) fn expect_condition<'a, P: FnOnce(char) -> bool>(
+pub(crate) fn expect_condition<P: FnOnce(char) -> bool>(
     visitor: &mut StrVisitor,
     predicate: P,
     expected: &'static str,
@@ -416,7 +416,7 @@ pub(crate) fn read_quoted_string(visitor: &mut StrVisitor) -> Result<String> {
 ///
 /// This algorithm is greedy, meaning it will consume all valid characters in a sequence.
 pub(crate) fn read_unquoted_string(visitor: &mut StrVisitor) -> Result<String> {
-    const START_EXPECTED: &'static str = "one of [a-zA-z]|-|\\+|\\.";
+    const START_EXPECTED: &str = "one of [a-zA-z]|-|\\+|\\.";
     match visitor.peek() {
         Some(c) if char_may_start_unquoted(c) => {}
         _ => {
@@ -447,10 +447,10 @@ pub(crate) fn char_may_start_unquoted(c: char) -> bool {
 /// read and evaluate an SNBT escape sequence.
 /// Assumes the \ character was already read.
 fn parse_escape_sequence(visitor: &mut StrVisitor) -> Result<char> {
-    const ESCAPABLE_CHARACTER: &'static str = "any escapable character";
+    const ESCAPABLE_CHARACTER: &str = "any escapable character";
     let escaped_char = visitor
         .next()
-        .ok_or_else(|| SnbtDeserialisationError::from_visitor(&visitor, ESCAPABLE_CHARACTER))?;
+        .ok_or_else(|| SnbtDeserialisationError::from_visitor(visitor, ESCAPABLE_CHARACTER))?;
     // see https://minecraft.wiki/w/NBT_format#Escape_sequences
     Ok(match escaped_char {
         '\\' => '\\',
@@ -471,8 +471,9 @@ fn parse_escape_sequence(visitor: &mut StrVisitor) -> Result<char> {
         'U' => parse_hexadecimal_as_char(visitor, u32::from_str_radix, 8)?,
         'N' => {
             expect_char(visitor, '{', "{")?;
-            todo!("\\N");
+            let c = parse_unicode_name(visitor)?;
             expect_char(visitor, '}', "}")?;
+            c
         }
         _ => {
             return Err(SnbtDeserialisationError::from_visitor(
@@ -504,6 +505,27 @@ where
         Ok(parser(hex, 16)?
             .try_into()
             .expect("todo: better error structures"))
+        ))
+    }
+}
+
+fn parse_unicode_name(visitor: &mut StrVisitor) -> Result<char> {
+    let name = read_slice_while(
+        visitor,
+        |c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | ' '),
+    );
+
+    if visitor.peek().is_none_or(|c| c != '}') {
+        Err(SnbtDeserialisationError::from_visitor(
+            visitor,
+            // TODO: This error message could use improvement
+            "expected '}' while reading Unicode name from \\N escape code",
+        ))
+    } else {
+        unicode_names2::character(name).ok_or(SnbtDeserialisationError::from_visitor(
+            visitor,
+            "symbol matching this name was not found",
+        ))
     }
 }
 

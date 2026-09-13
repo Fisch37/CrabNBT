@@ -1,6 +1,9 @@
 use crate::error::Error;
-use crate::nbt::snbt::de::utils::{FromVisitor, impl_FromStr_through_FromVisitor, StrVisitor, consume_whitespace, expect_char, read_string};
 use crate::nbt::error::SnbtDeserialisationError;
+use crate::nbt::snbt::de::utils::{
+    consume_whitespace, expect_char, impl_FromStr_through_FromVisitor, read_string, FromVisitor,
+    StrVisitor,
+};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use crab_nbt::nbt::compound::NbtCompound;
 use crab_nbt::nbt::tag::NbtTag;
@@ -148,10 +151,7 @@ impl FromVisitor for Nbt {
         consume_whitespace(visitor);
         expect_char(visitor, '}', "}")?;
 
-        Ok(Self {
-            name,
-            root_tag
-        })
+        Ok(Self { name, root_tag })
     }
 }
 impl_FromStr_through_FromVisitor!(Nbt);

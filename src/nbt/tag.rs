@@ -351,12 +351,10 @@ impl FromVisitor for NbtTag {
                             NbtTag::ByteArray(arr.into_iter().map(|b| b as u8).collect())
                         }),
                         'L' => read_snbt_array::<i64>(visitor).map(NbtTag::LongArray),
-                        _ => {
-                            return Err(SnbtDeserialisationError::from_visitor(
-                                visitor,
-                                "an array type identifier",
-                            ))
-                        }
+                        _ => Err(SnbtDeserialisationError::from_visitor(
+                            visitor,
+                            "an array type identifier",
+                        )),
                     }
                 } else {
                     // NOTE: This branch also triggers if visitor is fully consumed

@@ -338,14 +338,6 @@ macro_rules! wrap_int {
 }
 
 macro_rules! find_parser_matching {
-    // TODO: Implement existing combinations and add remaining ones.
-    //  Every radix can appear with every signedness for every (integer) number type.
-    //  This makes 3*2*4 = 24 possible combinations.
-    //  Coding this all by hand would be silly, therefore I recommend making use of macros
-    //  or clever generics. Consider that from_str_radix exists for _every_ integral type,
-    //  so maybe some kind of Trait to make use of this would be a good solution.
-    //  Consider adding the num_traits dependency for this purpose, as it already has a trait
-    //  for this problem (https://docs.rs/num-traits/latest/num_traits/trait.Num.html#tymethod.from_str_radix).
     ($target:expr) => {
         find_parser_matching!(
             $target,
@@ -388,6 +380,7 @@ macro_rules! find_parser_matching {
     }};
 }
 
+type NumberParser = Option<fn(&str) -> Result<NbtTag, SnbtDeserialisationError>>;
 /// Returns a function to correctly parse any given
 /// combination of [`Radix`], [`Signedness`], and [`NumberType`],
 /// if one exists, otherwise [`None`].
