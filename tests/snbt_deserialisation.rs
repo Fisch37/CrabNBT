@@ -144,6 +144,10 @@ fn nbt_numbers() {
     assert_parse!("bool(-0.9999999D)", FALSE);
     assert_parse!("bool(TRuE)", TRUE);
     assert_parse!("bool(faLSe)", FALSE);
+
+    assert_parse!("1________2___345__6", NbtTag::Int(123456));
+    assert_parse!("_1E1", NbtTag::String("_1E1".to_string()));
+    assert_parse!("_.1E1", NbtTag::String("_.1E1".to_string()));
 }
 
 #[test]
@@ -167,9 +171,7 @@ fn nbt_fails() {
 
     assert!("1a".parse::<NbtTag>().is_err());
     assert!("0x".parse::<NbtTag>().is_err());
-    assert!("_1E1".parse::<NbtTag>().is_err());
     assert!("._1E1".parse::<NbtTag>().is_err());
-    assert!("_.1E1".parse::<NbtTag>().is_err());
     assert!("1_E1".parse::<NbtTag>().is_err());
     assert!("1E_1".parse::<NbtTag>().is_err());
     assert!("1E1_".parse::<NbtTag>().is_err());
