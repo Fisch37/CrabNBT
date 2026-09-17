@@ -48,3 +48,7 @@ harness = false
 [[bench]]
 name = "write"
 harness = false
+
+[[bench]]
+name = "snbt_de"
+harness = false
