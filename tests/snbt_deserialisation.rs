@@ -167,16 +167,16 @@ fn nbt_arrays() {
 
 #[test]
 fn nbt_fails() {
-    assert!(r#"{"": {}}"#.parse::<NbtTag>().is_err());
+    assert_matches!(r#"{"": {}}"#.parse::<NbtTag>(), Err(_));
 
-    assert!("1a".parse::<NbtTag>().is_err());
-    assert!("0x".parse::<NbtTag>().is_err());
-    assert!("._1E1".parse::<NbtTag>().is_err());
-    assert!("1_E1".parse::<NbtTag>().is_err());
-    assert!("1E_1".parse::<NbtTag>().is_err());
-    assert!("1E1_".parse::<NbtTag>().is_err());
-    assert!("1E.1".parse::<NbtTag>().is_err());
-    assert!("1E1.".parse::<NbtTag>().is_err());
+    assert_matches!("1a".parse::<NbtTag>(), Err(_));
+    assert_matches!("0x".parse::<NbtTag>(), Err(_));
+    assert_matches!("._1E1".parse::<NbtTag>(), Err(_));
+    assert_matches!("1_E1".parse::<NbtTag>(), Err(_));
+    assert_matches!("1E_1".parse::<NbtTag>(), Err(_));
+    assert_matches!("1E1_".parse::<NbtTag>(), Err(_));
+    assert_matches!("1E.1".parse::<NbtTag>(), Err(_));
+    assert_matches!("1E1.".parse::<NbtTag>(), Err(_));
 }
 
 #[test]
