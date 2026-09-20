@@ -537,22 +537,9 @@ macro_rules! implUniformMethods {
         impl NbtList {
             $(
                 pub fn $method($($modifiers)*self, $($param_name: $param_type),*) $(-> $return)? {
-                    use self::NbtList::*;
-                    match self {
-                        End => $on_end,
-                        Byte(x) => x.$method($($param_name),*),
-                        Short(x) => x.$method($($param_name),*),
-                        Int(x) => x.$method($($param_name),*),
-                        Long(x) => x.$method($($param_name),*),
-                        Float(x) => x.$method($($param_name),*),
-                        Double(x) => x.$method($($param_name),*),
-                        ByteArray(x) => x.$method($($param_name),*),
-                        String(x) => x.$method($($param_name),*),
-                        List(x) => x.$method($($param_name),*),
-                        Compound(x) => x.$method($($param_name),*),
-                        IntArray(x) => x.$method($($param_name),*),
-                        LongArray(x) => x.$method($($param_name),*),
-                    }
+                    nbt_list_call_uniform!(
+                        (self.$method($($param_name),*)) | $on_end
+                    )
                 }
             )+
         }
