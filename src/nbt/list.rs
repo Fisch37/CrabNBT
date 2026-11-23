@@ -22,7 +22,7 @@ use crate::{
 
 /// Helper macro to run code on the contents of an [NbtList].
 ///
-/// Has three formats: Expression mode and Method mode, Free mode.
+/// Has three formats: Expression mode, Method mode, and Free mode.
 /// - Expression mode can be used to evaluate a single expression
 ///   on the contents of the list in a type-agnostic way.
 /// - Method mode is specifically for executing [Vec] methods
@@ -37,12 +37,12 @@ use crate::{
 /// use crab_nbt::{
 ///     NbtList,
 ///     NbtTag,
-///     nbt_list_call_uniform,
+///     nbt_list_call,
 ///     NbtCompatible as _
 /// };
 /// let mut nbt_list = NbtList::Short(vec![1,2,3]);
 /// // Expression mode
-/// nbt_list_call_uniform!(
+/// nbt_list_call!(
 ///     // may be any expression resulting in an NbtList or a borrowed form of it.
 ///     &mut nbt_list,
 ///     // Runs for every variant (except End)
@@ -56,12 +56,12 @@ use crate::{
 /// // (note that this particular use case is already supported via NbtList::len)
 /// assert_eq!(
 ///     // calls Vec::len() on the contents or returns 0 if NbtList::End
-///     nbt_list_call_uniform!(((&nbt_list).len()) | 0),
+///     nbt_list_call!(((&nbt_list).len()) | 0),
 ///     4
 /// );
 ///
 /// // Free mode
-/// let sum = nbt_list_call_uniform!(
+/// let sum = nbt_list_call!(
 ///     (&nbt_list) {
 ///         (*AnyNumber)(contents) => {
 ///             let mut iter = contents.iter().copied();
@@ -82,13 +82,13 @@ use crate::{
 /// assert_eq!(sum, NbtTag::Short(6))
 /// ```
 #[macro_export]
-macro_rules! nbt_list_call_uniform {
+macro_rules! nbt_list_call {
     (($self:expr) {
         $(($($variants:tt)*)($content:pat) => $expression:expr),+
         $(,$wildcard_content:ident => $wildcard_expression:expr)?
         $(,() => $end_case:expr)?
     }) => {
-        nbt_list_call_uniform!(
+        nbt_list_call!(
             @inner
             {
                 $self
@@ -104,20 +104,20 @@ macro_rules! nbt_list_call_uniform {
         )
     };
     ($self:expr, ($content:ident) => $expression:expr, () => $end_case:expr) => {
-        nbt_list_call_uniform!(($self) {
+        nbt_list_call!(($self) {
             (*AnyNumber|*AnyArray|String|List|Compound)($content) => $expression,
             () => $end_case
         })
     };
     ((($self:expr).$($method:tt)+) | $end_case:expr) => {
-        nbt_list_call_uniform!(
+        nbt_list_call!(
             $self,
             (x) => x.$($method)*,
             () => $end_case
         )
     };
     (($self:ident.$($method:tt)+) | $end_case:expr) => {
-        nbt_list_call_uniform!((($self).$($method)+) | $end_case)
+        nbt_list_call!((($self).$($method)+) | $end_case)
     };
 
     // === TT Muncher ===
@@ -128,7 +128,7 @@ macro_rules! nbt_list_call_uniform {
             $(($($token:tt)*))*
         ]
     ) => {
-        nbt_list_call_uniform!(
+        nbt_list_call!(
             @munch
             {$($meta)*}
             []
@@ -143,7 +143,7 @@ macro_rules! nbt_list_call_uniform {
         []
         [([$($next_target:tt)+] $($extra:tt)*)$(,$(($($remainder:tt)*)),+)?]
     ) => {
-        nbt_list_call_uniform!(
+        nbt_list_call!(
             @munch
             {$($meta)*}
             [[[] $($extra)*] $($layer0_state)*]
@@ -160,7 +160,7 @@ macro_rules! nbt_list_call_uniform {
         [$new_plain:ident$(|$($remainder:tt)+)?]
         [$($future:tt)*]
     ) => {
-        nbt_list_call_uniform!(@munch
+        nbt_list_call!(@munch
             {$($meta)*}
             [[[$($elements)* $new_plain] $($extra)*] $([$($prior_expansions)*])*]
             [$($($remainder)+)?]
@@ -175,7 +175,7 @@ macro_rules! nbt_list_call_uniform {
         [*AnyFloat$(|$($remainder:tt)+)?]
         [$($future:tt)*]
     ) => {
-        nbt_list_call_uniform!(@munch
+        nbt_list_call!(@munch
             {$($meta)*}
             [[[$($elements)* Float Double] $($extra)*] $([$($prior_expansions)*])*]
             [$($($remainder)+)?]
@@ -188,7 +188,7 @@ macro_rules! nbt_list_call_uniform {
         [*AnyInteger$(|$($remainder:tt)+)?]
         [$($future:tt)*]
     ) => {
-        nbt_list_call_uniform!(@munch
+        nbt_list_call!(@munch
             {$($meta)*}
             [[[$($elements)* Byte Short Int Long] $($extra)*] $([$($prior_expansions)*])*]
             [$($($remainder)+)?]
@@ -201,7 +201,7 @@ macro_rules! nbt_list_call_uniform {
         [*AnyNumber$(|$($remainder:tt)+)?]
         [$($future:tt)*]
     ) => {
-        nbt_list_call_uniform!(@munch
+        nbt_list_call!(@munch
             {$($meta)*}
             [[[$($elements)*] $($extra)*] $([$($prior_expansions)*])*]
             [*AnyFloat|*AnyInteger$(|$($remainder)+)?]
@@ -214,7 +214,7 @@ macro_rules! nbt_list_call_uniform {
         [*AnyArray$(|$($remainder:tt)+)?]
         [$($future:tt)*]
     ) => {
-        nbt_list_call_uniform!(@munch
+        nbt_list_call!(@munch
             {$($meta)*}
             [[[$($elements)* ByteArray IntArray LongArray] $($extra)*] $([$($prior_expansions)*])*]
             [$($($remainder)+)?]
@@ -229,7 +229,7 @@ macro_rules! nbt_list_call_uniform {
         []
         []
     ) => {
-        nbt_list_call_uniform!(@invert
+        nbt_list_call!(@invert
             {$($meta)*}
             []
             [$($inverted_result)*]
@@ -240,7 +240,7 @@ macro_rules! nbt_list_call_uniform {
         [$($output:tt)*]
         [[$($element:tt)*] $([$($input:tt)*])*]
     ) => {
-        nbt_list_call_uniform!(@invert
+        nbt_list_call!(@invert
             {$($meta)*}
             [[$($element)*] $($output)*]
             [$([$($input)*])*]
@@ -312,11 +312,11 @@ impl NbtList {
     }
 
     pub fn get(&self, index: usize) -> Option<&dyn NbtCompatible> {
-        nbt_list_call_uniform!((self.get(index).map(|x| x as &dyn NbtCompatible)) | None)
+        nbt_list_call!((self.get(index).map(|x| x as &dyn NbtCompatible)) | None)
     }
 
     pub fn get_mut(&mut self, index: usize) -> Option<&mut dyn NbtCompatible> {
-        nbt_list_call_uniform!((self.get_mut(index).map(|x| x as &mut dyn NbtCompatible)) | None)
+        nbt_list_call!((self.get_mut(index).map(|x| x as &mut dyn NbtCompatible)) | None)
     }
 
     pub fn iter(&self) -> Iter<'_> {
@@ -333,7 +333,7 @@ impl NbtList {
     /// This operation will always wrap the list __even if it is already a wrapped list__!
     /// If you only want to ensure your list is "heterogeneous", use [NbtList::ensure_wrapped].
     pub fn into_wrapped(self) -> Vec<NbtCompound> {
-        nbt_list_call_uniform!(
+        nbt_list_call!(
             self,
             (content) => content
                 .into_iter()
@@ -409,14 +409,14 @@ impl Index<usize> for NbtList {
     type Output = dyn NbtCompatible;
 
     fn index(&self, index: usize) -> &Self::Output {
-        nbt_list_call_uniform!(
+        nbt_list_call!(
             (self.index(index)) | panic!("Index out of bounds for empty list. Index {index}")
         )
     }
 }
 impl IndexMut<usize> for NbtList {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        nbt_list_call_uniform!(
+        nbt_list_call!(
             (self.index_mut(index)) | panic!("Index out of bounds for empty list. Index {index}")
         )
     }
@@ -499,7 +499,7 @@ impl PrivateNbtCompatible for NbtList {
     where
         Self: Sized,
     {
-        nbt_list_call_uniform!(
+        nbt_list_call!(
             self,
             (content) => NbtList::ser_list_helper(content, bytes),
             () => {
@@ -537,7 +537,7 @@ macro_rules! implUniformMethods {
         impl NbtList {
             $(
                 pub fn $method($($modifiers)*self, $($param_name: $param_type),*) $(-> $return)? {
-                    nbt_list_call_uniform!(
+                    nbt_list_call!(
                         (self.$method($($param_name),*)) | $on_end
                     )
                 }

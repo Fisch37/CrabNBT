@@ -1,4 +1,4 @@
-use crate::{nbt_list_call_uniform, NbtCompound, NbtList, NbtTag};
+use crate::{nbt_list_call, NbtCompound, NbtList, NbtTag};
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 use serde::{Deserialize, Serialize};
 
@@ -180,7 +180,7 @@ impl Serialize for NbtList {
                 $seq.end()
             }};
         }
-        nbt_list_call_uniform!(
+        nbt_list_call!(
             (self) {
                 (
                     Byte|Short|Int|Long|Float|Double|String|IntArray|LongArray|List|Compound
