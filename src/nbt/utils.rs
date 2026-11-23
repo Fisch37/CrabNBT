@@ -75,18 +75,18 @@ pub fn serialize_str_into(s: &str, bytes: &mut impl BufMut) {
 pub(crate) fn read_array<T, const N: usize, F>(
     bytes: &mut impl Buf,
     len: usize,
-    from_bytes: F,
-) -> Result<Vec<T>, Error>
+    from_be: F,
+) -> Vec<T>
 where
     F: Fn([u8; N]) -> T,
 {
-    let mut arr = Vec::with_capacity(len);
-    for _ in 0..len {
-        let mut conversion_buf = [0u8; N];
-        bytes.try_copy_to_slice(&mut conversion_buf)?;
-        arr.push(from_bytes(conversion_buf));
-    }
-    Ok(arr)
+    bytes
+        .copy_to_bytes(len * N)
+        .as_chunks::<N>()
+        .0
+        .iter()
+        .map(|chunk| from_be(*chunk))
+        .collect()
 }
 
 /// Write an arbitrary list to the [`Formatter`] `f`.
