@@ -133,8 +133,10 @@ fn nbt_numbers() {
     assert_parse!("0b0b", NbtTag::Byte(0));
 
     assert_parse!("0x1f", NbtTag::Int(0x1f));
-
-    // assert_parse!("0x1f", NbtTag::Int(0x1f));
+    assert_parse!("0x80UB", NbtTag::Byte(-128));
+    assert_parse!("0X23l", NbtTag::Long(35));
+    assert_parse!("0XFBA", NbtTag::Int(4026));
+    assert_parse!("0B11S", NbtTag::Short(3));
 
     const TRUE: NbtTag = NbtTag::Byte(1);
     const FALSE: NbtTag = NbtTag::Byte(0);
