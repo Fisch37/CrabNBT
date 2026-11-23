@@ -81,14 +81,24 @@ use crate::{
 /// );
 /// assert_eq!(sum, NbtTag::Short(6))
 /// ```
-#[macro_export]
+#[macro_export(local_inner_macros)]
 macro_rules! nbt_list_call {
+    ($($token:tt)*) => {
+        nbt_list_call_inner! {
+            $($token)*
+        }
+    };
+}
+
+#[macro_export(local_inner_macros)]
+#[doc(hidden)]
+macro_rules! nbt_list_call_inner {
     (($self:expr) {
         $(($($variants:tt)*)($content:pat) => $expression:expr),+
         $(,$wildcard_content:ident => $wildcard_expression:expr)?
         $(,() => $end_case:expr)?
     }) => {
-        nbt_list_call!(
+        nbt_list_call_inner!(
             @inner
             {
                 $self
@@ -104,20 +114,20 @@ macro_rules! nbt_list_call {
         )
     };
     ($self:expr, ($content:ident) => $expression:expr, () => $end_case:expr) => {
-        nbt_list_call!(($self) {
+        nbt_list_call_inner!(($self) {
             (*AnyNumber|*AnyArray|String|List|Compound)($content) => $expression,
             () => $end_case
         })
     };
     ((($self:expr).$($method:tt)+) | $end_case:expr) => {
-        nbt_list_call!(
+        nbt_list_call_inner!(
             $self,
             (x) => x.$($method)*,
             () => $end_case
         )
     };
     (($self:ident.$($method:tt)+) | $end_case:expr) => {
-        nbt_list_call!((($self).$($method)+) | $end_case)
+        nbt_list_call_inner!((($self).$($method)+) | $end_case)
     };
 
     // === TT Muncher ===
@@ -128,7 +138,7 @@ macro_rules! nbt_list_call {
             $(($($token:tt)*))*
         ]
     ) => {
-        nbt_list_call!(
+        nbt_list_call_inner!(
             @munch
             {$($meta)*}
             []
@@ -143,7 +153,7 @@ macro_rules! nbt_list_call {
         []
         [([$($next_target:tt)+] $($extra:tt)*)$(,$(($($remainder:tt)*)),+)?]
     ) => {
-        nbt_list_call!(
+        nbt_list_call_inner!(
             @munch
             {$($meta)*}
             [[[] $($extra)*] $($layer0_state)*]
@@ -160,7 +170,7 @@ macro_rules! nbt_list_call {
         [$new_plain:ident$(|$($remainder:tt)+)?]
         [$($future:tt)*]
     ) => {
-        nbt_list_call!(@munch
+        nbt_list_call_inner!(@munch
             {$($meta)*}
             [[[$($elements)* $new_plain] $($extra)*] $([$($prior_expansions)*])*]
             [$($($remainder)+)?]
@@ -175,7 +185,7 @@ macro_rules! nbt_list_call {
         [*AnyFloat$(|$($remainder:tt)+)?]
         [$($future:tt)*]
     ) => {
-        nbt_list_call!(@munch
+        nbt_list_call_inner!(@munch
             {$($meta)*}
             [[[$($elements)* Float Double] $($extra)*] $([$($prior_expansions)*])*]
             [$($($remainder)+)?]
@@ -188,7 +198,7 @@ macro_rules! nbt_list_call {
         [*AnyInteger$(|$($remainder:tt)+)?]
         [$($future:tt)*]
     ) => {
-        nbt_list_call!(@munch
+        nbt_list_call_inner!(@munch
             {$($meta)*}
             [[[$($elements)* Byte Short Int Long] $($extra)*] $([$($prior_expansions)*])*]
             [$($($remainder)+)?]
@@ -201,7 +211,7 @@ macro_rules! nbt_list_call {
         [*AnyNumber$(|$($remainder:tt)+)?]
         [$($future:tt)*]
     ) => {
-        nbt_list_call!(@munch
+        nbt_list_call_inner!(@munch
             {$($meta)*}
             [[[$($elements)*] $($extra)*] $([$($prior_expansions)*])*]
             [*AnyFloat|*AnyInteger$(|$($remainder)+)?]
@@ -214,7 +224,7 @@ macro_rules! nbt_list_call {
         [*AnyArray$(|$($remainder:tt)+)?]
         [$($future:tt)*]
     ) => {
-        nbt_list_call!(@munch
+        nbt_list_call_inner!(@munch
             {$($meta)*}
             [[[$($elements)* ByteArray IntArray LongArray] $($extra)*] $([$($prior_expansions)*])*]
             [$($($remainder)+)?]
@@ -229,7 +239,7 @@ macro_rules! nbt_list_call {
         []
         []
     ) => {
-        nbt_list_call!(@invert
+        nbt_list_call_inner!(@invert
             {$($meta)*}
             []
             [$($inverted_result)*]
@@ -240,7 +250,7 @@ macro_rules! nbt_list_call {
         [$($output:tt)*]
         [[$($element:tt)*] $([$($input:tt)*])*]
     ) => {
-        nbt_list_call!(@invert
+        nbt_list_call_inner!(@invert
             {$($meta)*}
             [[$($element)*] $($output)*]
             [$([$($input)*])*]
