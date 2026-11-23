@@ -214,7 +214,7 @@ pub fn read_number(
     let mut read_error: Option<ErrorProvider> = None;
     let num_str = read_slice_while_skipping(visitor, |c| {
         if has_read_once && can_have_radix_prefix {
-            match c {
+            match c.to_ascii_lowercase() {
                 'b' => {
                     radix = Radix::Binary;
                     can_have_radix_prefix = false;
