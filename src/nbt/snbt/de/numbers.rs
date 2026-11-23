@@ -2,14 +2,12 @@
 //!
 //! -?((0b(0|1)+|0x[0-9a-fA-F]+)|0(b|s|i|l|f|d|B|S|I|L|F|D)?|[1-9][0-9]*(b|s|i|l|f|d|B|S|I|L|F|D)?|[1-9][0-9]*.[0-9]*(f|d|F|D)?)
 
-use std::{borrow::Cow, fmt::Debug, str::FromStr};
+use std::{fmt::Debug, str::FromStr};
 
 use crate::nbt::{
-    error::SnbtDeserialisationError,
-    snbt::de::utils::{
-        expect_str_ignore_case, StrVisitor,
+    NbtTag, error::SnbtDeserialisationError, snbt::de::utils::{
+        ReaderAction, StrVisitor, expect_str_ignore_case, read_slice_while_skipping,
     },
-    NbtTag,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -185,11 +183,18 @@ pub fn read_number_or_numboid_const(
     }
 }
 
+#[warn(clippy::needless_continue)]
 pub fn read_number(
     visitor: &mut StrVisitor,
     default_integer_type: Option<NumberType>,
     default_float_type: Option<NumberType>,
 ) -> Result<NbtTag, SnbtDeserialisationError> {
+    type ErrorProvider = fn(&StrVisitor) -> SnbtDeserialisationError;
+    const NON_DIGIT_AFTER_UNDERSCORE: ErrorProvider = |visitor| SnbtDeserialisationError::from_visitor(
+        visitor,
+        "a digit in the correct radix"
+    );
+
     // TODO: Check _ implementation. May be underconstrained
     //  (no check for end/beginning of sequence, which may cause bugs)
     let mut is_float_only: bool = false;
@@ -202,65 +207,77 @@ pub fn read_number(
     let mut can_have_radix_prefix = visitor.peek().is_some_and(|c: char| c == '0');
     // Radices are defined at the second index, so we have to track this as well
     let mut has_read_once = false;
-    let slice = visitor.as_str();
-    let mut num_end: usize = 0;
-    while let Some(c) = visitor.peek() {
+    
+    let mut last_char_was_digit = false;
+    let mut last_char_was_skipped = false;
+    
+    let mut read_error: Option<ErrorProvider> = None;
+    let num_str = read_slice_while_skipping(visitor, |c| {
         if has_read_once && can_have_radix_prefix {
             match c {
-                'b' => radix = Radix::Binary,
-                'x' => radix = Radix::Hexadecimal,
+                'b' => {
+                    radix = Radix::Binary;
+                    can_have_radix_prefix = false;
+                    return ReaderAction::Accept
+                },
+                'x' => {
+                    radix = Radix::Hexadecimal;
+                    can_have_radix_prefix = false;
+                    return ReaderAction::Accept
+                },
                 // Decimal case
-                c if c.is_ascii_digit() || c == '.' => {}
-                _ => break,
+                c if c.is_ascii_digit() || c == '.' => {
+                    can_have_radix_prefix = false;
+                }
+                _ => return ReaderAction::Abort,
             }
-            can_have_radix_prefix = false;
-            num_end += 1;
-            visitor.next().unwrap();
-            continue;
         }
         has_read_once = true;
-        match c {
+        let action = match c {
             '.' => {
-                is_float_only = true;
-                num_end += 1;
-                visitor.next().unwrap();
-                continue;
+                if last_char_was_skipped {
+                    read_error = Some(NON_DIGIT_AFTER_UNDERSCORE);
+                    ReaderAction::Abort
+                } else {
+                    is_float_only = true;
+                    ReaderAction::Accept
+                }
             }
             'e' | 'E' if radix != Radix::Hexadecimal => {
-                is_float_only = true;
-                num_end += 1;
-                visitor.next().unwrap();
-                continue;
-            }
-            '_' if visitor
-                .peek_previous()
-                .is_some_and(|c| radix.check_digit(c)) =>
-            {
-                visitor.next().unwrap();
-                if visitor.peek().is_some_and(|c| radix.check_digit(c)) {
-                    num_end += 1;
-                    continue;
+                if last_char_was_skipped {
+                    read_error = Some(NON_DIGIT_AFTER_UNDERSCORE);
+                    ReaderAction::Abort
                 } else {
-                    return Err(SnbtDeserialisationError::from_visitor(
-                        visitor,
-                        "number should come after _",
-                    ));
+                    is_float_only = true;
+                    ReaderAction::Accept
+                }
+            }
+            '_' if has_read_once => {
+                if !last_char_was_digit && !last_char_was_skipped {
+                    read_error = Some(NON_DIGIT_AFTER_UNDERSCORE);
+                    ReaderAction::Abort
+                } else {
+                    ReaderAction::Skip
                 }
             }
             c if radix.check_character(c) => {
-                num_end += 1;
-                visitor.next().unwrap();
-                continue;
+                ReaderAction::Accept
             }
-            _ => break,
-        }
+            _ => ReaderAction::Abort,
+        };
+        last_char_was_digit = radix.check_digit(c);
+        last_char_was_skipped = action == ReaderAction::Skip;
+        action
+    });
+    if let Some(efun) = read_error {
+        // read_slice_while_skipping doesn't advance after Abort,
+        // but errors causing aborts are triggered by the read character
+        let _ = visitor.next();
+        return Err(efun(visitor))
     }
-    let num_str = &slice[..num_end];
-    let num_str = if num_str.contains('_') {
-        Cow::Owned(num_str.replace('_', ""))
-    } else {
-        Cow::Borrowed(num_str)
-    };
+    if last_char_was_skipped {
+        return Err(NON_DIGIT_AFTER_UNDERSCORE(visitor));
+    }
 
     let (mut signedness, mut number_type) = parse_number_suffix! {
         match visitor.next();

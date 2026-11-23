@@ -438,7 +438,7 @@ pub(crate) fn char_may_be_unquoted(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '-' || c == '+' || c == '.' || c == '_'
 }
 pub(crate) fn char_may_start_unquoted(c: char) -> bool {
-    c.is_ascii_alphabetic()
+    c.is_ascii_alphabetic() || c == '_'
 }
 
 /// read and evaluate an SNBT escape sequence.
