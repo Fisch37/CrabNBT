@@ -304,8 +304,7 @@ impl PrivateNbtCompatible for Vec<i32> {
         const BYTES: usize = size_of::<i32>();
 
         let len = bytes.try_get_i32()? as usize;
-        let numbers = read_array::<i32, BYTES, _>(bytes, len, i32::from_be_bytes);
-        Ok(numbers)
+        read_array::<i32, BYTES, _>(bytes, len, i32::from_be_bytes)
     }
 
     fn serialize_content_into(&self, bytes: &mut impl BufMut)
@@ -337,8 +336,7 @@ impl PrivateNbtCompatible for Vec<i64> {
         const BYTES: usize = size_of::<i64>();
 
         let len = bytes.try_get_i32()? as usize;
-        let numbers = read_array::<i64, BYTES, _>(bytes, len, i64::from_be_bytes);
-        Ok(numbers)
+        read_array::<i64, BYTES, _>(bytes, len, i64::from_be_bytes)
     }
 
     fn serialize_content_into(&self, bytes: &mut impl BufMut)

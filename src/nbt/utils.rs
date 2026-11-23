@@ -65,24 +65,28 @@ pub fn serialize_str_into(s: &str, bytes: &mut impl BufMut) {
     bytes.put_slice(&java_string);
 }
 
+/// Deserialize an array of _len_ elements from a bytestream,
+/// where _from_bytes_ is the deserialization function
+/// and _N_ is the number of bytes per element.
+///
+/// Returns `Err(Error::NoDataRemaining)` if less than `len*N` bytes are available.
 // This can be improved once rust-lang/rust#132980 is resolved:
-// Instead of passing `BYTES` manually, we could use const generics, e.g. `size_of::<T>()`.
+// Instead of passing `N` manually, we could use const generics, e.g. `size_of::<T>()`.
 pub(crate) fn read_array<T, const N: usize, F>(
     bytes: &mut impl Buf,
     len: usize,
-    from_be: F,
-) -> Vec<T>
+    from_bytes: F,
+) -> Result<Vec<T>, Error>
 where
     F: Fn([u8; N]) -> T,
 {
-    bytes
-        .copy_to_bytes(len * N)
-        .chunks_exact(N)
-        .map(|chunk| {
-            let arr: [u8; N] = chunk.try_into().expect("chunk size mismatch");
-            from_be(arr)
-        })
-        .collect()
+    let mut arr = Vec::with_capacity(len);
+    for _ in 0..len {
+        let mut conversion_buf = [0u8; N];
+        bytes.try_copy_to_slice(&mut conversion_buf)?;
+        arr.push(from_bytes(conversion_buf));
+    }
+    Ok(arr)
 }
 
 /// Write an arbitrary list to the [`Formatter`] `f`.
