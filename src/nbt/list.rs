@@ -31,7 +31,7 @@ use crate::{
 ///   It also includes variant expansions as a shortcut for common
 ///   variant groups. The following expansions are supported:
 ///   `AnyFloat`, `AnyInteger`, `AnyNumber`, `AnyArray`
-/// 
+///
 ///
 /// ```
 /// use crab_nbt::{
@@ -59,7 +59,7 @@ use crate::{
 ///     nbt_list_call_uniform!(((&nbt_list).len()) | 0),
 ///     4
 /// );
-/// 
+///
 /// // Free mode
 /// let sum = nbt_list_call_uniform!(
 ///     (&nbt_list) {
