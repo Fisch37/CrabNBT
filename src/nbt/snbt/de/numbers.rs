@@ -5,9 +5,11 @@
 use std::{fmt::Debug, str::FromStr};
 
 use crate::nbt::{
-    NbtTag, error::SnbtDeserialisationError, snbt::de::utils::{
-        ReaderAction, StrVisitor, expect_str_ignore_case, read_slice_while_skipping,
+    error::SnbtDeserialisationError,
+    snbt::de::utils::{
+        expect_str_ignore_case, read_slice_while_skipping, ReaderAction, StrVisitor,
     },
+    NbtTag,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -190,10 +192,8 @@ pub fn read_number(
     default_float_type: Option<NumberType>,
 ) -> Result<NbtTag, SnbtDeserialisationError> {
     type ErrorProvider = fn(&StrVisitor) -> SnbtDeserialisationError;
-    const NON_DIGIT_AFTER_UNDERSCORE: ErrorProvider = |visitor| SnbtDeserialisationError::from_visitor(
-        visitor,
-        "a digit in the correct radix"
-    );
+    const NON_DIGIT_AFTER_UNDERSCORE: ErrorProvider =
+        |visitor| SnbtDeserialisationError::from_visitor(visitor, "a digit in the correct radix");
 
     // TODO: Check _ implementation. May be underconstrained
     //  (no check for end/beginning of sequence, which may cause bugs)
@@ -207,10 +207,10 @@ pub fn read_number(
     let mut can_have_radix_prefix = visitor.peek().is_some_and(|c: char| c == '0');
     // Radices are defined at the second index, so we have to track this as well
     let mut has_read_once = false;
-    
+
     let mut last_char_was_digit = false;
     let mut last_char_was_skipped = false;
-    
+
     let mut read_error: Option<ErrorProvider> = None;
     let num_str = read_slice_while_skipping(visitor, |c| {
         if has_read_once && can_have_radix_prefix {
@@ -218,13 +218,13 @@ pub fn read_number(
                 'b' => {
                     radix = Radix::Binary;
                     can_have_radix_prefix = false;
-                    return ReaderAction::Accept
-                },
+                    return ReaderAction::Accept;
+                }
                 'x' => {
                     radix = Radix::Hexadecimal;
                     can_have_radix_prefix = false;
-                    return ReaderAction::Accept
-                },
+                    return ReaderAction::Accept;
+                }
                 // Decimal case
                 c if c.is_ascii_digit() || c == '.' => {
                     can_have_radix_prefix = false;
@@ -260,9 +260,7 @@ pub fn read_number(
                     ReaderAction::Skip
                 }
             }
-            c if radix.check_character(c) => {
-                ReaderAction::Accept
-            }
+            c if radix.check_character(c) => ReaderAction::Accept,
             _ => ReaderAction::Abort,
         };
         last_char_was_digit = radix.check_digit(c);
@@ -273,7 +271,7 @@ pub fn read_number(
         // read_slice_while_skipping doesn't advance after Abort,
         // but errors causing aborts are triggered by the read character
         let _ = visitor.next();
-        return Err(efun(visitor))
+        return Err(efun(visitor));
     }
     if last_char_was_skipped {
         return Err(NON_DIGIT_AFTER_UNDERSCORE(visitor));

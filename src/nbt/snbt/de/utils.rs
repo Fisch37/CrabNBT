@@ -498,9 +498,7 @@ where
             "some number of hexadecimal characters",
         ))
     } else {
-        Ok(parser(hex, 16)?
-            .try_into()?
-        )
+        Ok(parser(hex, 16)?.try_into()?)
     }
 }
 

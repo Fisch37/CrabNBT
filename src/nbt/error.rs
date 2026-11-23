@@ -1,4 +1,7 @@
-use std::{char::CharTryFromError, num::{ParseFloatError, ParseIntError, TryFromIntError}};
+use std::{
+    char::CharTryFromError,
+    num::{ParseFloatError, ParseIntError, TryFromIntError},
+};
 
 use crate::nbt::snbt::de::{
     numbers::{NumberType, Radix, Signedness},

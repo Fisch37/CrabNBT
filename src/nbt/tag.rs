@@ -11,8 +11,7 @@ use crate::nbt::error::SnbtDeserialisationError;
 use crate::nbt::snbt::de::numbers::{may_start_number, read_number_or_numboid_const, NumberType};
 use crate::nbt::snbt::de::utils::{
     consume_whitespace, expect_char, expect_str, expect_str_ignore_case,
-    impl_FromStr_through_FromVisitor, read_quoted_string, read_string,
-    FromVisitor, StrVisitor,
+    impl_FromStr_through_FromVisitor, read_quoted_string, read_string, FromVisitor, StrVisitor,
 };
 
 /// Enum representing the different types of NBT tags.
