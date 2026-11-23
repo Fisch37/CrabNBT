@@ -326,8 +326,7 @@ where
     consume_while(visitor, condition);
     start
         .get_slice_up_to(visitor)
-        // TODO: Remove this sketchy expect
-        .expect("visitor should be further advanced than start in read_slice_while, but isn't")
+        .expect("unreachable: visitor should be at least as advanced as start in read_slice_while, but isn't")
 }
 
 /// Helper type for [`read_slice_while_skipping`].
@@ -439,8 +438,6 @@ pub(crate) fn char_may_be_unquoted(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '-' || c == '+' || c == '.' || c == '_'
 }
 pub(crate) fn char_may_start_unquoted(c: char) -> bool {
-    // TODO: I think something went missing here.
-    // There should be some character may _not_ start an unquoted string
     c.is_ascii_alphabetic()
 }
 
@@ -491,20 +488,19 @@ fn parse_hexadecimal_as_char<N: TryInto<char, Error = E2>, E2, M>(
 ) -> Result<char>
 where
     M: FnOnce(&str, u32) -> StdResult<N, ParseIntError>,
-    // TODO: Remove this once better error structures is done
-    E2: Debug,
+    SnbtDeserialisationError: From<E2>,
 {
     let (hex, chars) = visitor.next_n(num_expected);
     if chars != num_expected {
         Err(SnbtDeserialisationError::from_visitor(
             visitor,
             // TODO: This error message could use improvement
-            "C hexadecimal characters",
+            "some number of hexadecimal characters",
         ))
     } else {
         Ok(parser(hex, 16)?
-            .try_into()
-            .expect("todo: better error structures"))
+            .try_into()?
+        )
     }
 }
 
@@ -517,7 +513,6 @@ fn parse_unicode_name(visitor: &mut StrVisitor) -> Result<char> {
     if visitor.peek().is_none_or(|c| c != '}') {
         Err(SnbtDeserialisationError::from_visitor(
             visitor,
-            // TODO: This error message could use improvement
             "expected '}' while reading Unicode name from \\N escape code",
         ))
     } else {

@@ -374,7 +374,6 @@ impl FromVisitor for NbtTag {
                     } else {
                         return Err(SnbtDeserialisationError::from_visitor(visitor, "EOF"));
                     };
-                    // todo!("Read number or read true/false");
                     consume_whitespace(visitor);
                     expect_char(visitor, ')', ")")?;
                     Ok(tag)

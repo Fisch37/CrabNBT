@@ -267,7 +267,10 @@ pub fn read_number(
         all,
         error_unsignable => {
             visitor.previous();
-            todo!("better error structures")
+            return Err(SnbtDeserialisationError::from_visitor(
+                visitor,
+                "a signable number type"
+            ));
         },
         on_false_signedness = |c: Option<char>| if c.is_some() { visitor.previous(); },
         else read_c => {

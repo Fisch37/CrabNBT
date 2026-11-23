@@ -1,4 +1,4 @@
-use std::num::{ParseFloatError, ParseIntError, TryFromIntError};
+use std::{char::CharTryFromError, num::{ParseFloatError, ParseIntError, TryFromIntError}};
 
 use crate::nbt::snbt::de::{
     numbers::{NumberType, Radix, Signedness},
@@ -10,11 +10,18 @@ pub enum SnbtDeserialisationError {
     #[error("Illegal combination of {0:?}, {1:?}, and {2:?}")]
     IllegalCombination(Radix, Signedness, NumberType),
     #[error(transparent)]
-    ParseFloatError(ParseFloatError),
+    ParseFloatError(#[from] ParseFloatError),
     #[error(transparent)]
-    ParseIntError(ParseIntError),
+    ParseIntError(#[from] ParseIntError),
     #[error(transparent)]
-    TryFromIntError(TryFromIntError),
+    TryFromIntError(#[from] TryFromIntError),
+    // Note that this is different from [`std::char::TryFromCharError`]
+    // CharTryFromError is used when conversion _to_ a char fails,
+    // TryFromCharError is used when conversion _from_ a char fails.
+    // If this is not confusing enough for your tastes,
+    // I am certain Rust would welcome a PR to further obscure this difference.
+    #[error(transparent)]
+    CharTryFromError(#[from] CharTryFromError),
     #[error("UUID should contain at most 32 hexadecimal digits and 4 dashes")]
     UuidStringTooBig,
     #[error("UUID only has {0} of 4 dashes")]
@@ -26,25 +33,6 @@ pub enum SnbtDeserialisationError {
         expected: &'static str,
     },
 }
-
-impl From<ParseFloatError> for SnbtDeserialisationError {
-    fn from(value: ParseFloatError) -> Self {
-        Self::ParseFloatError(value)
-    }
-}
-
-impl From<ParseIntError> for SnbtDeserialisationError {
-    fn from(value: ParseIntError) -> Self {
-        Self::ParseIntError(value)
-    }
-}
-
-impl From<TryFromIntError> for SnbtDeserialisationError {
-    fn from(value: TryFromIntError) -> Self {
-        Self::TryFromIntError(value)
-    }
-}
-
 impl From<std::convert::Infallible> for SnbtDeserialisationError {
     fn from(_: std::convert::Infallible) -> Self {
         unreachable!()
